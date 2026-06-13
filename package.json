@@ -1,0 +1,32 @@
+{
+  "name": "@richai/context-manager",
+  "version": "0.1.0",
+  "description": "Provider-pluggable local-first context and memory manager for LLM applications.",
+  "main": "src/index.js",
+  "types": "types/index.d.ts",
+  "files": [
+    "src",
+    "types",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/context-manager.js && node --check src/content.js && node --check src/providers/local-context-manager.js && node --check src/providers/mem0-oss.js && node --check src/storage/memory-storage.js && node --check src/http/routes.js && node --check test/context-manager.test.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "context-manager",
+    "llm",
+    "memory",
+    "mem0",
+    "rag",
+    "multimodal"
+  ],
+  "author": "RichAI",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  }
+}

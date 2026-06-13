@@ -1,0 +1,40 @@
+{
+  "userId": "user-fixture",
+  "agentId": "advisor",
+  "runId": "trip-2026",
+  "category": "policy",
+  "content": [
+    {
+      "type": "text",
+      "text": "Traveler prefers direct billing and PPO network when available."
+    },
+    {
+      "type": "file",
+      "name": "policy.pdf",
+      "mimeType": "application/pdf",
+      "text": "Policy maximum $100,000. Deductible $250."
+    },
+    {
+      "type": "image",
+      "name": "insurance-card-front.png",
+      "mimeType": "image/png",
+      "url": "s3://demo/insurance-card-front.png",
+      "description": "Insurance ID card image."
+    },
+    {
+      "type": "audio",
+      "name": "assistance-call.mp3",
+      "mimeType": "audio/mpeg",
+      "transcript": "Assistance phone confirmed claim form is required."
+    },
+    {
+      "type": "video",
+      "name": "claim-walkthrough.mp4",
+      "mimeType": "video/mp4",
+      "description": "Recorded claim guidance."
+    }
+  ],
+  "metadata": {
+    "source": "fixture"
+  }
+}
