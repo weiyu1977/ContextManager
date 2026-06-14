@@ -82,6 +82,7 @@ The package exposes memory-service style methods:
 - `search`
 - `get`
 - `list`
+- `update`
 - `delete`
 - `clear`
 - `buildContext`
@@ -97,6 +98,7 @@ GET    /api/context-manager/memories
 POST   /api/context-manager/memories
 POST   /api/context-manager/memories/search
 GET    /api/context-manager/memories/:id
+PUT    /api/context-manager/memories/:id
 DELETE /api/context-manager/memories/:id
 DELETE /api/context-manager/memory
 ```
@@ -142,11 +144,24 @@ const storage = {
   async add(item) {},
   async get({ userId, id }) {},
   async list({ userId, limit }) {},
+  async update({ userId, id, patch }) {},
   async delete({ userId, id }) {},
   async clear({ userId }) {},
   async logEvent(event) {}
 };
 ```
+
+## CRUD Debug UIs
+
+Host applications can build admin/debug screens on top of the same API surface:
+
+- List memories with `GET /api/context-manager/memories`.
+- Inspect one item with `GET /api/context-manager/memories/:id`.
+- Create a memory with `POST /api/context-manager/memories`.
+- Update a memory with `PUT /api/context-manager/memories/:id`.
+- Soft-delete a memory with `DELETE /api/context-manager/memories/:id`.
+
+The package keeps these endpoints user-scoped. If your product needs a cross-user admin console, implement the admin authorization layer in the host application and call the same manager methods with the target user's ID.
 
 ## Design Principles
 

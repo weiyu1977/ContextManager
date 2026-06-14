@@ -31,6 +31,45 @@ test("local provider stores, retrieves, searches, and deletes text memories", as
   assert.equal(await manager.get({ userId: "user-1", id: saved.id }), null);
 });
 
+test("local provider updates memories without changing ownership", async () => {
+  const manager = createContextManager();
+  const saved = await manager.add({
+    userId: "user-update",
+    memory: "Traveler prefers paper claim forms.",
+    category: "claim"
+  });
+
+  const updated = await manager.update({
+    userId: "user-update",
+    id: saved.id,
+    memory: "Traveler prefers online claim forms and itemized bills.",
+    category: "preference",
+    metadata: { source: "admin-debug" },
+    confidence: 0.82
+  });
+
+  assert.equal(updated.id, saved.id);
+  assert.equal(updated.userId, "user-update");
+  assert.equal(updated.category, "preference");
+  assert.equal(updated.metadata.source, "admin-debug");
+  assert.equal(updated.confidence, 0.82);
+  assert.match(updated.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+
+  const oldQuery = await manager.search({ userId: "user-update", query: "paper" });
+  assert.equal(oldQuery.length, 0);
+
+  const newQuery = await manager.search({ userId: "user-update", query: "itemized bills" });
+  assert.equal(newQuery.length, 1);
+  assert.equal(newQuery[0].id, saved.id);
+
+  const wrongUserUpdate = await manager.update({
+    userId: "different-user",
+    id: saved.id,
+    memory: "Should not update another user's memory."
+  });
+  assert.equal(wrongUserUpdate, null);
+});
+
 test("normalizes multimodal context and supports content type filters", async () => {
   const manager = createContextManager();
   const content = normalizeContentItems(multimodalFixture);

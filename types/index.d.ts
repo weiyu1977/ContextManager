@@ -86,6 +86,7 @@ export interface ContextStorage {
   add(item: ContextMemory): Promise<ContextMemory>;
   get(input: { userId: string; id: string }): Promise<ContextMemory | null>;
   list(input: { userId: string; limit?: number }): Promise<ContextMemory[]>;
+  update(input: { userId: string; id: string; patch?: Partial<ContextMemory> }): Promise<ContextMemory | null>;
   delete(input: { userId: string; id: string }): Promise<boolean>;
   clear(input: { userId: string }): Promise<number>;
   logEvent?(event: Record<string, unknown>): Promise<void>;
@@ -99,6 +100,7 @@ export interface ContextProvider {
   add?(input: MemoryInput): Promise<unknown>;
   search?(input: SearchInput): Promise<unknown>;
   get?(input: { userId: string; id: string }): Promise<unknown>;
+  update?(input: MemoryInput & { id: string; userId: string }): Promise<unknown>;
   delete?(input: { userId: string; id: string }): Promise<unknown>;
 }
 
@@ -109,6 +111,7 @@ export class ContextManager {
   search(input: SearchInput): Promise<ContextMemory[]>;
   get(input: { userId: string; id: string }): Promise<ContextMemory | null>;
   list(input: { userId: string; limit?: number }): Promise<ContextMemory[]>;
+  update(input: MemoryInput & { id: string; userId: string }): Promise<ContextMemory | null>;
   delete(input: { userId: string; id: string }): Promise<boolean>;
   clear(input: { userId: string }): Promise<number>;
   buildContext(input: { userId: string; query?: string; recentMessages?: unknown[]; lifecycle?: Record<string, unknown>; limit?: number }): Promise<{ context: Record<string, unknown>; diagnostics: Record<string, unknown> }>;
@@ -119,6 +122,7 @@ export class InMemoryStorage implements ContextStorage {
   add(item: ContextMemory): Promise<ContextMemory>;
   get(input: { userId: string; id: string }): Promise<ContextMemory | null>;
   list(input: { userId: string; limit?: number }): Promise<ContextMemory[]>;
+  update(input: { userId: string; id: string; patch?: Partial<ContextMemory> }): Promise<ContextMemory | null>;
   delete(input: { userId: string; id: string }): Promise<boolean>;
   clear(input: { userId: string }): Promise<number>;
 }

@@ -15,7 +15,7 @@ class LocalContextManagerProvider {
       status: "ready",
       storage: "local",
       externalCloud: false,
-      capabilities: ["add", "search", "get", "list", "delete", "clear", "multimodal_content"]
+      capabilities: ["add", "search", "get", "list", "update", "delete", "clear", "multimodal_content"]
     };
   }
 
@@ -78,6 +78,31 @@ class LocalContextManagerProvider {
   async list({ userId, limit = 50 }) {
     if (!userId) throw new Error("userId is required");
     return this.storage.list({ userId, limit });
+  }
+
+  async update(input = {}) {
+    const normalized = normalizeMemoryInput(input);
+    const userId = normalized.userId;
+    const id = input.id;
+    if (!userId || !id) throw new Error("userId and id are required");
+    const patch = {};
+    if (Object.prototype.hasOwnProperty.call(input, "memory") || Object.prototype.hasOwnProperty.call(input, "text")) {
+      patch.memory = normalized.memory;
+      patch.text = normalized.memory;
+      if (!Object.prototype.hasOwnProperty.call(input, "content")) {
+        patch.content = normalized.memory ? normalizeMemoryInput({ text: normalized.memory }).content : [];
+      }
+    }
+    if (normalized.content.length || Object.prototype.hasOwnProperty.call(input, "content")) patch.content = normalized.content;
+    if (normalized.categories.length || Object.prototype.hasOwnProperty.call(input, "category") || Object.prototype.hasOwnProperty.call(input, "categories")) {
+      patch.categories = normalized.categories;
+      patch.category = normalized.categories[0] || "conversation";
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "metadata")) patch.metadata = normalized.metadata;
+    if (Object.prototype.hasOwnProperty.call(input, "confidence")) patch.confidence = normalized.confidence;
+    const updated = await this.storage.update({ userId, id, patch });
+    if (updated) await this.storage.logEvent?.({ userId, eventType: "memory.update", provider: this.id, status: "ok", metadata: { id } });
+    return updated;
   }
 
   async delete({ userId, id }) {

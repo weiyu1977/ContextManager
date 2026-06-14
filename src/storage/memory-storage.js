@@ -15,6 +15,21 @@ class InMemoryStorage {
     return { ...item };
   }
 
+  async update({ userId, id, patch = {} }) {
+    const item = this.items.get(id);
+    if (!item || item.userId !== userId || item.status === "deleted") return null;
+    const next = {
+      ...item,
+      ...patch,
+      id: item.id,
+      userId: item.userId,
+      status: patch.status || item.status,
+      updatedAt: new Date().toISOString()
+    };
+    this.items.set(id, next);
+    return { ...next };
+  }
+
   async list({ userId, limit = 50 }) {
     return [...this.items.values()]
       .filter((item) => item.userId === userId && item.status !== "deleted")

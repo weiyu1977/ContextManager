@@ -28,6 +28,12 @@ function createContextManagerHandlers(manager, options = {}) {
         if (!memory) return res.status(404).json({ error: "Memory not found" });
         res.json({ ok: true, memory });
       }));
+      app.put(`${basePath}/memories/:id`, requireAuth, asyncHandler(async (req, res) => {
+        const userId = requireUserId(getUserId(req));
+        const memory = await manager.update({ ...(req.body || {}), userId, id: req.params.id });
+        if (!memory) return res.status(404).json({ error: "Memory not found" });
+        res.json({ ok: true, memory });
+      }));
       app.delete(`${basePath}/memories/:id`, requireAuth, asyncHandler(async (req, res) => {
         const userId = requireUserId(getUserId(req));
         const deleted = await manager.delete({ userId, id: req.params.id });

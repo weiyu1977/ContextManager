@@ -67,6 +67,12 @@ class ContextManager {
     return this.localProvider.list(input);
   }
 
+  async update(input) {
+    const updated = await this.localProvider.update(input);
+    if (updated && this.shouldSyncExternal()) await this.tryExternal("update", input);
+    return updated;
+  }
+
   async delete(input) {
     const deleted = await this.localProvider.delete(input);
     if (deleted && this.shouldSyncExternal()) await this.tryExternal("delete", input);
