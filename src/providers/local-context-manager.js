@@ -34,7 +34,7 @@ class LocalContextManagerProvider {
       text: normalized.memory,
       content: normalized.content,
       categories: normalized.categories,
-      category: normalized.categories[0] || "conversation",
+      category: normalized.categories[0] || "chat",
       metadata: normalized.metadata,
       confidence: normalized.confidence,
       status: "active",
@@ -96,7 +96,7 @@ class LocalContextManagerProvider {
     if (normalized.content.length || Object.prototype.hasOwnProperty.call(input, "content")) patch.content = normalized.content;
     if (normalized.categories.length || Object.prototype.hasOwnProperty.call(input, "category") || Object.prototype.hasOwnProperty.call(input, "categories")) {
       patch.categories = normalized.categories;
-      patch.category = normalized.categories[0] || "conversation";
+      patch.category = normalized.categories[0] || "chat";
     }
     if (Object.prototype.hasOwnProperty.call(input, "metadata")) patch.metadata = normalized.metadata;
     if (Object.prototype.hasOwnProperty.call(input, "confidence")) patch.confidence = normalized.confidence;

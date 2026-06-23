@@ -1,4 +1,5 @@
 export type ContentType = "text" | "markdown" | "html" | "json" | "image" | "audio" | "video" | "file";
+export type ContextType = "chat" | "recommendation_input" | "profile_patch" | "policy_analysis" | "provider_search" | "file_summary" | "session_summary";
 
 export interface ContextContentItem {
   id?: string;
@@ -102,6 +103,24 @@ export interface ContextWorkflowConfig {
   mem0OssApiKeyConfigured?: boolean;
 }
 
+export interface ContextDiagnostics {
+  provider: string;
+  selectedProvider: string;
+  status?: string;
+  fallback?: boolean;
+  fallbackReason?: string;
+  memoryCount?: number;
+  confirmedMemoryCount?: number;
+  inferredMemoryCount?: number;
+  recentMessageCount?: number;
+  sessionSummaryGenerated?: boolean;
+  sessionSummaryMessageCount?: number;
+  latencyMs?: { retrieval?: number; summary?: number; embedding?: number; total?: number };
+  errors?: Record<string, string>;
+  providers?: { retrieval?: string; embedding?: string; summary?: string };
+  lifecycleSections?: string[];
+}
+
 export interface BoundedChatContextInput {
   manager: ContextManager;
   userId: string;
@@ -145,7 +164,7 @@ export class ContextManager {
   update(input: MemoryInput & { id: string; userId: string }): Promise<ContextMemory | null>;
   delete(input: { userId: string; id: string }): Promise<boolean>;
   clear(input: { userId: string }): Promise<number>;
-  buildContext(input: { userId: string; query?: string; recentMessages?: unknown[]; lifecycle?: Record<string, unknown>; limit?: number }): Promise<{ context: Record<string, unknown>; diagnostics: Record<string, unknown> }>;
+  buildContext(input: { userId: string; query?: string; recentMessages?: unknown[]; lifecycle?: Record<string, unknown>; limit?: number }): Promise<{ context: Record<string, unknown>; diagnostics: ContextDiagnostics }>;
   testProvider(input?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
@@ -173,6 +192,9 @@ export function contentToSearchText(content: ContextContentItem[]): string;
 export function validateSelfHostedUrl(rawUrl: string, options?: { allowPublicHosts?: boolean; allowedDomains?: string[]; blockedHosts?: string[] }): URL;
 export function createContextManagerHandlers(manager: ContextManager, options?: Record<string, unknown>): { mount(app: unknown, basePath?: string): void };
 export function normalizeBooleanFlag(value: unknown, defaultValue?: boolean): boolean;
+export const CONTEXT_TYPES: readonly ContextType[];
+export function normalizeContextType(value?: unknown, fallback?: ContextType): ContextType;
+export function listContextProviderAdapters(): Array<Record<string, unknown>>;
 export function normalizeContextConfig(input?: ContextWorkflowConfig): Required<ContextWorkflowConfig>;
 export function buildContextStatus(input?: ContextWorkflowConfig): Record<string, unknown>;
 export function trimText(value: unknown, maxChars: number): string;
@@ -181,5 +203,6 @@ export function prepareMemoryItems(memories?: Array<Record<string, unknown>>, co
 export function createContextInjectionStrategy(config?: ContextWorkflowConfig): Record<string, unknown>;
 export function buildMemoryText(userMessage?: string, assistantText?: string, config?: ContextWorkflowConfig): string;
 export function normalizeExtractedMemory(extractedMemory?: unknown, userMessage?: string, assistantText?: string, config?: ContextWorkflowConfig): { shouldRemember: boolean; text: string; category: string; confidence: number; metadata: Record<string, unknown> };
-export function buildBoundedChatContext(input: BoundedChatContextInput): Promise<{ context: Record<string, unknown>; diagnostics: Record<string, unknown>; memoryIds: string[] }>;
+export function buildSessionSummary(messages?: Array<Record<string, unknown>>, config?: ContextWorkflowConfig): null | Record<string, unknown>;
+export function buildBoundedChatContext(input: BoundedChatContextInput): Promise<{ context: Record<string, unknown>; diagnostics: ContextDiagnostics; memoryIds: string[] }>;
 export function buildContextConnectionTest(input?: ContextWorkflowConfig): Record<string, unknown>;

@@ -13,6 +13,33 @@ function clampNumber(value, fallback, min, max) {
   return Math.max(min, Math.min(max, Math.floor(parsed)));
 }
 
+const CONTEXT_TYPES = Object.freeze([
+  "chat",
+  "recommendation_input",
+  "profile_patch",
+  "policy_analysis",
+  "provider_search",
+  "file_summary",
+  "session_summary"
+]);
+
+const LEGACY_CONTEXT_TYPE_MAP = Object.freeze({
+  conversation: "chat",
+  policy: "policy_analysis",
+  provider: "provider_search",
+  recommendation: "recommendation_input"
+});
+
+function normalizeContextType(value, fallback = "chat") {
+  const raw = String(value || "").trim().toLowerCase();
+  const normalized = LEGACY_CONTEXT_TYPE_MAP[raw] || raw;
+  return CONTEXT_TYPES.includes(normalized) ? normalized : fallback;
+}
+
+function nowMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+
 function normalizeContextConfig(input = {}) {
   return {
     enabled: normalizeBooleanFlag(input.enabled, true),
@@ -32,6 +59,47 @@ function normalizeContextConfig(input = {}) {
     mem0OssBaseUrl: String(input.mem0OssBaseUrl || ""),
     mem0OssApiKeyConfigured: Boolean(input.mem0OssApiKeyConfigured || input.mem0OssApiKey)
   };
+}
+
+function listContextProviderAdapters() {
+  return [
+    {
+      id: "local_context_manager",
+      label: "Local Context Manager",
+      role: "context_store",
+      externalCloud: false,
+      capabilities: ["text", "image", "audio", "video", "file", "keyword_search", "crud"]
+    },
+    {
+      id: "mem0_oss_self_hosted",
+      label: "Mem0 OSS self-hosted",
+      role: "context_store",
+      externalCloud: false,
+      capabilities: ["self_hosted_endpoint", "crud", "search"],
+      note: "Data should remain in the project-controlled/self-hosted service, not Mem0 Cloud."
+    },
+    {
+      id: "openai_embedding",
+      label: "OpenAI embedding",
+      role: "embedding_provider",
+      externalCloud: true,
+      capabilities: ["embedding"]
+    },
+    {
+      id: "gemini_embedding",
+      label: "Gemini embedding",
+      role: "embedding_provider",
+      externalCloud: true,
+      capabilities: ["embedding"]
+    },
+    {
+      id: "custom_embedding",
+      label: "Custom embedding",
+      role: "embedding_provider",
+      externalCloud: "depends_on_endpoint",
+      capabilities: ["embedding", "openai_compatible"]
+    }
+  ];
 }
 
 function buildContextStatus(input = {}) {
@@ -54,6 +122,7 @@ function buildContextStatus(input = {}) {
     embeddingModel: config.embeddingModel,
     summaryProvider: config.summaryProvider,
     summaryModel: config.summaryModel,
+    providerAdapters: listContextProviderAdapters(),
     mem0Oss: {
       enabled: config.provider === "mem0_oss_self_hosted",
       baseUrlConfigured: Boolean(config.mem0OssBaseUrl),
@@ -82,17 +151,42 @@ function prepareRecentMessages(messages = [], configInput = {}) {
 
 function prepareMemoryItems(memories = [], configInput = {}) {
   const config = normalizeContextConfig(configInput);
-  return (Array.isArray(memories) ? memories : []).map((memory) => ({
-    id: memory.id,
-    provider: memory.provider || "local_context_manager",
-    category: memory.category || (Array.isArray(memory.categories) ? memory.categories[0] : "") || "conversation",
-    text: trimText(memory.text || memory.memory || "", config.memoryTextChars),
-    memory: trimText(memory.memory || memory.text || "", config.memoryTextChars),
-    confidence: memory.confidence ?? null,
-    score: memory.score ?? null,
-    updatedAt: memory.updatedAt || "",
-    metadata: memory.metadata || {}
-  }));
+  return (Array.isArray(memories) ? memories : [])
+    .map((memory) => {
+      const metadata = memory.metadata && typeof memory.metadata === "object" ? memory.metadata : {};
+      const category = normalizeContextType(memory.category || (Array.isArray(memory.categories) ? memory.categories[0] : ""));
+      const confidence = Number.isFinite(Number(memory.confidence ?? metadata.confidence)) ? Number(memory.confidence ?? metadata.confidence) : null;
+      const userConfirmed = memory.userConfirmed === true || metadata.userConfirmed === true;
+      const createdAt = memory.createdAt || metadata.createdAt || "";
+      const updatedAt = memory.updatedAt || metadata.updatedAt || createdAt || "";
+      return {
+        id: memory.id,
+        provider: memory.provider || "local_context_manager",
+        category,
+        type: category,
+        text: trimText(memory.text || memory.memory || "", config.memoryTextChars),
+        memory: trimText(memory.memory || memory.text || "", config.memoryTextChars),
+        confidence,
+        score: memory.score ?? null,
+        createdAt,
+        updatedAt,
+        userConfirmed,
+        metadata: {
+          ...metadata,
+          source: metadata.source || memory.source || "context_manager",
+          confidence,
+          createdAt,
+          updatedAt,
+          userConfirmed
+        }
+      };
+    })
+    .sort((a, b) => {
+      if (a.userConfirmed !== b.userConfirmed) return a.userConfirmed ? -1 : 1;
+      const confidenceDelta = Number(b.confidence || 0) - Number(a.confidence || 0);
+      if (confidenceDelta) return confidenceDelta;
+      return String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+    });
 }
 
 function createContextInjectionStrategy(configInput = {}) {
@@ -126,9 +220,40 @@ function normalizeExtractedMemory(extractedMemory, userMessage, assistantText, c
   return {
     shouldRemember,
     text,
-    category: String(memory.category || "conversation"),
+    category: normalizeContextType(memory.category || memory.type || "chat"),
     confidence: Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : 0.55,
-    metadata: memory.metadata && typeof memory.metadata === "object" ? memory.metadata : {}
+    metadata: {
+      source: "ai_chat",
+      userConfirmed: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...(memory.metadata && typeof memory.metadata === "object" ? memory.metadata : {})
+    }
+  };
+}
+
+function buildSessionSummary(messages = [], configInput = {}) {
+  const config = normalizeContextConfig(configInput);
+  const allMessages = Array.isArray(messages) ? messages : [];
+  if (!config.summaryProvider || config.summaryProvider === "none") return null;
+  if (allMessages.length <= config.recentMessageLimit) return null;
+  const older = allMessages.slice(0, Math.max(0, allMessages.length - config.recentMessageLimit));
+  if (!older.length) return null;
+  const first = older[0];
+  const last = older[older.length - 1];
+  const topics = older
+    .map((message) => String(message.text || message.content || "").trim())
+    .filter(Boolean)
+    .slice(-6)
+    .map((text) => trimText(text, 90));
+  return {
+    type: "session_summary",
+    text: trimText(`Earlier conversation summary (${older.length} messages): ${topics.join(" | ")}`, config.memoryTextChars),
+    sourceMessageCount: older.length,
+    generatedBy: config.summaryProvider === "local" ? "local_session_summary" : `configured_${config.summaryProvider}_summary`,
+    firstMessageAt: first?.createdAt || first?.time || "",
+    lastMessageAt: last?.createdAt || last?.time || "",
+    createdAt: new Date().toISOString()
   };
 }
 
@@ -160,8 +285,11 @@ async function buildBoundedChatContext({
         provider: "context_manager",
         selectedProvider: config.provider,
         status: "disabled",
+        fallback: false,
         memoryCount: 0,
         recentMessageCount: 0,
+        latencyMs: { retrieval: 0, summary: 0, embedding: 0, total: 0 },
+        errors: {},
         lifecycleSections: Object.keys(lifecycle || {}).filter((key) => Boolean(lifecycle[key]))
       },
       memoryIds: []
@@ -169,25 +297,79 @@ async function buildBoundedChatContext({
   }
 
   if (!manager || typeof manager.buildContext !== "function") {
-    throw new Error("buildBoundedChatContext requires a context manager");
+    const boundedMessages = prepareRecentMessages(recentMessages, config);
+    return {
+      context: {
+        language,
+        lifecycle,
+        recentMessages: boundedMessages,
+        memories: [],
+        memoryProvider: "context_manager",
+        selectedProvider: config.provider,
+        memoryStatus: "fallback",
+        contextInjectionStrategy: createContextInjectionStrategy(config)
+      },
+      diagnostics: {
+        provider: "context_manager",
+        selectedProvider: config.provider,
+        status: "fallback",
+        fallback: true,
+        fallbackReason: "context_manager_unavailable",
+        memoryCount: 0,
+        recentMessageCount: boundedMessages.length,
+        latencyMs: { retrieval: 0, summary: 0, embedding: 0, total: 0 },
+        errors: { retrieval: "buildBoundedChatContext requires a context manager" },
+        lifecycleSections: Object.keys(lifecycle || {}).filter((key) => Boolean(lifecycle[key]))
+      },
+      memoryIds: []
+    };
   }
 
-  const built = await manager.buildContext({
-    userId,
-    query: query || message || "",
-    recentMessages,
-    lifecycle,
-    limit: config.maxMemories
-  });
+  const totalStart = nowMs();
+  const errors = {};
+  let built;
+  let retrievalMs = 0;
+  try {
+    const retrievalStart = nowMs();
+    built = await manager.buildContext({
+      userId,
+      query: query || message || "",
+      recentMessages,
+      lifecycle,
+      limit: config.maxMemories
+    });
+    retrievalMs = nowMs() - retrievalStart;
+  } catch (error) {
+    retrievalMs = nowMs() - totalStart;
+    errors.retrieval = error.message;
+    built = {
+      context: {
+        lifecycle,
+        recentMessages,
+        memories: [],
+        memoryProvider: "context_manager",
+        selectedProvider: config.provider
+      },
+      diagnostics: {
+        status: "fallback",
+        fallback: true,
+        fallbackReason: "retrieval_failed"
+      }
+    };
+  }
   const diagnostics = built.diagnostics || {};
   const sourceContext = built.context || {};
   const memories = prepareMemoryItems(sourceContext.memories || [], config);
   const boundedMessages = prepareRecentMessages(sourceContext.recentMessages || recentMessages, config);
+  const summaryStart = nowMs();
+  const sessionSummary = buildSessionSummary(sourceContext.recentMessages || recentMessages, config);
+  const summaryMs = nowMs() - summaryStart;
   const context = {
     language,
     lifecycle,
     recentMessages: boundedMessages,
     memories,
+    sessionSummary,
     memoryProvider: sourceContext.memoryProvider || "context_manager",
     selectedProvider: sourceContext.selectedProvider || config.provider,
     memoryStatus: diagnostics.status || "ok",
@@ -199,8 +381,26 @@ async function buildBoundedChatContext({
       ...diagnostics,
       provider: "context_manager",
       selectedProvider: context.selectedProvider,
+      fallback: Boolean(diagnostics.fallback || errors.retrieval),
+      fallbackReason: diagnostics.fallbackReason || (errors.retrieval ? "retrieval_failed" : ""),
       memoryCount: memories.length,
+      confirmedMemoryCount: memories.filter((memory) => memory.userConfirmed).length,
+      inferredMemoryCount: memories.filter((memory) => !memory.userConfirmed).length,
       recentMessageCount: boundedMessages.length,
+      sessionSummaryGenerated: Boolean(sessionSummary),
+      sessionSummaryMessageCount: sessionSummary?.sourceMessageCount || 0,
+      latencyMs: {
+        retrieval: retrievalMs,
+        summary: summaryMs,
+        embedding: 0,
+        total: nowMs() - totalStart
+      },
+      errors,
+      providers: {
+        retrieval: config.retrievalProvider,
+        embedding: config.embeddingProvider,
+        summary: config.summaryProvider
+      },
       lifecycleSections: Object.keys(lifecycle || {}).filter((key) => Boolean(lifecycle[key]))
     },
     memoryIds: memories.map((memory) => memory.id).filter(Boolean)
@@ -221,6 +421,9 @@ function buildContextConnectionTest(input = {}) {
 
 module.exports = {
   normalizeBooleanFlag,
+  CONTEXT_TYPES,
+  normalizeContextType,
+  listContextProviderAdapters,
   normalizeContextConfig,
   buildContextStatus,
   trimText,
@@ -229,6 +432,7 @@ module.exports = {
   createContextInjectionStrategy,
   buildMemoryText,
   normalizeExtractedMemory,
+  buildSessionSummary,
   buildBoundedChatContext,
   buildContextConnectionTest
 };

@@ -12,6 +12,9 @@ const { validateSelfHostedUrl } = require("./security");
 const { createContextManagerHandlers } = require("./http/routes");
 const {
   normalizeBooleanFlag,
+  CONTEXT_TYPES,
+  normalizeContextType,
+  listContextProviderAdapters,
   normalizeContextConfig,
   buildContextStatus,
   trimText,
@@ -20,6 +23,7 @@ const {
   createContextInjectionStrategy,
   buildMemoryText,
   normalizeExtractedMemory,
+  buildSessionSummary,
   buildBoundedChatContext,
   buildContextConnectionTest
 } = require("./chat-workflow");
@@ -37,6 +41,9 @@ module.exports = {
   validateSelfHostedUrl,
   createContextManagerHandlers,
   normalizeBooleanFlag,
+  CONTEXT_TYPES,
+  normalizeContextType,
+  listContextProviderAdapters,
   normalizeContextConfig,
   buildContextStatus,
   trimText,
@@ -45,6 +52,7 @@ module.exports = {
   createContextInjectionStrategy,
   buildMemoryText,
   normalizeExtractedMemory,
+  buildSessionSummary,
   buildBoundedChatContext,
   buildContextConnectionTest
 };

@@ -104,6 +104,18 @@ function contentChecksum(item) {
   return hash.digest("hex");
 }
 
+const CONTEXT_TYPE_ALIASES = Object.freeze({
+  conversation: "chat",
+  policy: "policy_analysis",
+  provider: "provider_search",
+  recommendation: "recommendation_input"
+});
+
+function normalizeMemoryCategory(value) {
+  const raw = String(value || "chat").trim().toLowerCase();
+  return CONTEXT_TYPE_ALIASES[raw] || raw || "chat";
+}
+
 function normalizeMemoryInput(input = {}) {
   const content = normalizeContentItems(input);
   const text = input.memory || input.text || contentToSearchText(content);
@@ -114,7 +126,7 @@ function normalizeMemoryInput(input = {}) {
     runId: String(input.runId || input.run_id || input.sessionId || "").trim(),
     memory: String(text || "").trim().slice(0, 20000),
     content,
-    categories: normalizeStringList(input.categories || input.category || "conversation"),
+    categories: normalizeStringList(input.categories || input.category || "chat").map(normalizeMemoryCategory),
     metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
     confidence: input.confidence === undefined ? null : Number(input.confidence)
   };
@@ -129,6 +141,7 @@ module.exports = {
   supportedContentTypes,
   normalizeContentItems,
   normalizeMemoryInput,
+  normalizeMemoryCategory,
   contentToSearchText,
   normalizeStringList
 };

@@ -3,10 +3,14 @@ const http = require("node:http");
 const test = require("node:test");
 const {
   createContextManager,
+  CONTEXT_TYPES,
+  normalizeContextType,
+  listContextProviderAdapters,
   normalizeContentItems,
   normalizeContextConfig,
   normalizeExtractedMemory,
   buildBoundedChatContext,
+  buildSessionSummary,
   validateSelfHostedUrl,
   Mem0OssProvider
 } = require("../src");
@@ -120,7 +124,7 @@ test("chat workflow helpers normalize memory extraction and bounded context", as
   });
   const fallbackMemory = normalizeExtractedMemory(null, "Need PPO and urgent care advice", "Check network wording carefully.", config);
   assert.equal(fallbackMemory.shouldRemember, true);
-  assert.equal(fallbackMemory.category, "conversation");
+  assert.equal(fallbackMemory.category, "chat");
   assert.match(fallbackMemory.text, /^User: Need PPO/);
 
   const explicitMemory = normalizeExtractedMemory(
@@ -130,7 +134,7 @@ test("chat workflow helpers normalize memory extraction and bounded context", as
     config
   );
   assert.equal(explicitMemory.shouldRemember, false);
-  assert.equal(explicitMemory.category, "temporary");
+  assert.equal(explicitMemory.category, "chat");
   assert.equal(explicitMemory.confidence, 0.91);
 
   const manager = createContextManager({ maxMemories: 3 });
@@ -153,11 +157,67 @@ test("chat workflow helpers normalize memory extraction and bounded context", as
 
   assert.equal(result.context.recentMessages.length, 2);
   assert.equal(result.context.memories.length, 1);
+  assert.equal(result.context.sessionSummary, null);
   assert.equal(result.context.language, "en");
   assert.equal(result.context.contextInjectionStrategy.type, "bounded_local_context");
   assert.equal(result.diagnostics.provider, "context_manager");
   assert.deepEqual(result.diagnostics.lifecycleSections, ["uploadedPolicies", "empty"]);
+  assert.equal(typeof result.diagnostics.latencyMs.retrieval, "number");
   assert.equal(result.memoryIds.length, 1);
+});
+
+test("chat workflow exposes context types, adapters, confirmed priority, summaries, and fallback diagnostics", async () => {
+  assert.ok(CONTEXT_TYPES.includes("policy_analysis"));
+  assert.equal(normalizeContextType("conversation"), "chat");
+  assert.ok(listContextProviderAdapters().some((adapter) => adapter.id === "gemini_embedding"));
+
+  const manager = createContextManager({ maxMemories: 5 });
+  await manager.add({
+    userId: "priority-user",
+    memory: "AI inferred the traveler may prefer a low deductible.",
+    category: "profile_patch",
+    confidence: 0.95,
+    metadata: { source: "ai_inferred", userConfirmed: false }
+  });
+  await manager.add({
+    userId: "priority-user",
+    memory: "User confirmed the traveler has chronic hypertension.",
+    category: "profile_patch",
+    confidence: 0.7,
+    metadata: { source: "user_confirmation", userConfirmed: true }
+  });
+
+  const result = await buildBoundedChatContext({
+    manager,
+    userId: "priority-user",
+    query: "traveler profile",
+    recentMessages: Array.from({ length: 7 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", text: `message ${index}` })),
+    config: { maxMemories: 5, recentMessageLimit: 2, summaryProvider: "local" }
+  });
+
+  assert.equal(result.context.memories[0].userConfirmed, true);
+  assert.equal(result.diagnostics.confirmedMemoryCount, 1);
+  assert.equal(result.diagnostics.inferredMemoryCount, 1);
+  assert.equal(result.diagnostics.sessionSummaryGenerated, true);
+  assert.equal(result.context.sessionSummary.sourceMessageCount, 5);
+
+  const summary = buildSessionSummary(Array.from({ length: 4 }, (_, index) => ({ text: `older ${index}` })), {
+    recentMessageLimit: 1,
+    summaryProvider: "local"
+  });
+  assert.equal(summary.type, "session_summary");
+
+  const fallback = await buildBoundedChatContext({
+    manager: { buildContext: async () => { throw new Error("temporary retrieval outage"); } },
+    userId: "fallback-user",
+    query: "anything",
+    recentMessages: [{ role: "user", text: "hello" }],
+    config: { maxMemories: 3 }
+  });
+  assert.equal(fallback.diagnostics.fallback, true);
+  assert.equal(fallback.context.memories.length, 0);
+  assert.equal(fallback.context.recentMessages.length, 1);
+  assert.match(fallback.diagnostics.errors.retrieval, /temporary retrieval outage/);
 });
 
 test("blocks Mem0 Cloud endpoints and allows localhost self-hosted endpoints", () => {
