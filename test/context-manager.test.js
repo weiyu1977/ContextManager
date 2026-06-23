@@ -4,6 +4,9 @@ const test = require("node:test");
 const {
   createContextManager,
   normalizeContentItems,
+  normalizeContextConfig,
+  normalizeExtractedMemory,
+  buildBoundedChatContext,
   validateSelfHostedUrl,
   Mem0OssProvider
 } = require("../src");
@@ -106,6 +109,55 @@ test("buildContext returns lifecycle, recent messages, memory results, and diagn
   assert.equal(built.context.memories.length, 2);
   assert.equal(built.context.recentMessages.length, 12);
   assert.deepEqual(built.diagnostics.lifecycleSections, ["uploadedPolicies"]);
+});
+
+test("chat workflow helpers normalize memory extraction and bounded context", async () => {
+  const config = normalizeContextConfig({
+    maxMemories: 1,
+    recentMessageLimit: 2,
+    recentMessageChars: 16,
+    memoryTextChars: 28
+  });
+  const fallbackMemory = normalizeExtractedMemory(null, "Need PPO and urgent care advice", "Check network wording carefully.", config);
+  assert.equal(fallbackMemory.shouldRemember, true);
+  assert.equal(fallbackMemory.category, "conversation");
+  assert.match(fallbackMemory.text, /^User: Need PPO/);
+
+  const explicitMemory = normalizeExtractedMemory(
+    { shouldRemember: false, text: "Do not store this.", category: "temporary", confidence: 0.91 },
+    "",
+    "",
+    config
+  );
+  assert.equal(explicitMemory.shouldRemember, false);
+  assert.equal(explicitMemory.category, "temporary");
+  assert.equal(explicitMemory.confidence, 0.91);
+
+  const manager = createContextManager({ maxMemories: 3 });
+  await manager.add({ userId: "workflow-user", memory: "Traveler needs direct billing and PPO.", category: "preference" });
+  await manager.add({ userId: "workflow-user", memory: "Traveler uploaded policy documents.", category: "policy" });
+
+  const result = await buildBoundedChatContext({
+    manager,
+    userId: "workflow-user",
+    query: "PPO policy",
+    language: "en",
+    lifecycle: { uploadedPolicies: ["p1"], empty: [] },
+    recentMessages: [
+      { role: "user", text: "first message that should be dropped" },
+      { role: "assistant", text: "second message is very long and should be trimmed" },
+      { role: "user", text: "third message" }
+    ],
+    config
+  });
+
+  assert.equal(result.context.recentMessages.length, 2);
+  assert.equal(result.context.memories.length, 1);
+  assert.equal(result.context.language, "en");
+  assert.equal(result.context.contextInjectionStrategy.type, "bounded_local_context");
+  assert.equal(result.diagnostics.provider, "context_manager");
+  assert.deepEqual(result.diagnostics.lifecycleSections, ["uploadedPolicies", "empty"]);
+  assert.equal(result.memoryIds.length, 1);
 });
 
 test("blocks Mem0 Cloud endpoints and allows localhost self-hosted endpoints", () => {

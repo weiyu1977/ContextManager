@@ -10,6 +10,19 @@ const {
 } = require("./content");
 const { validateSelfHostedUrl } = require("./security");
 const { createContextManagerHandlers } = require("./http/routes");
+const {
+  normalizeBooleanFlag,
+  normalizeContextConfig,
+  buildContextStatus,
+  trimText,
+  prepareRecentMessages,
+  prepareMemoryItems,
+  createContextInjectionStrategy,
+  buildMemoryText,
+  normalizeExtractedMemory,
+  buildBoundedChatContext,
+  buildContextConnectionTest
+} = require("./chat-workflow");
 
 module.exports = {
   createContextManager,
@@ -22,5 +35,16 @@ module.exports = {
   normalizeMemoryInput,
   contentToSearchText,
   validateSelfHostedUrl,
-  createContextManagerHandlers
+  createContextManagerHandlers,
+  normalizeBooleanFlag,
+  normalizeContextConfig,
+  buildContextStatus,
+  trimText,
+  prepareRecentMessages,
+  prepareMemoryItems,
+  createContextInjectionStrategy,
+  buildMemoryText,
+  normalizeExtractedMemory,
+  buildBoundedChatContext,
+  buildContextConnectionTest
 };

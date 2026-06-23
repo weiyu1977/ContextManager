@@ -82,6 +82,37 @@ export interface ContextManagerOptions {
   maxMemories?: number;
 }
 
+export interface ContextWorkflowConfig {
+  enabled?: boolean | string | number;
+  maxMemories?: number | string;
+  recentMessageLimit?: number | string;
+  recentMessageChars?: number | string;
+  memoryTextChars?: number | string;
+  retentionMode?: string;
+  provider?: string;
+  extractorProvider?: string;
+  extractorModel?: string;
+  retrievalProvider?: string;
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  summaryProvider?: string;
+  summaryModel?: string;
+  mem0OssBaseUrl?: string;
+  mem0OssApiKey?: string;
+  mem0OssApiKeyConfigured?: boolean;
+}
+
+export interface BoundedChatContextInput {
+  manager: ContextManager;
+  userId: string;
+  query?: string;
+  message?: string;
+  language?: string;
+  lifecycle?: Record<string, unknown>;
+  recentMessages?: Array<Record<string, unknown>>;
+  config?: ContextWorkflowConfig;
+}
+
 export interface ContextStorage {
   add(item: ContextMemory): Promise<ContextMemory>;
   get(input: { userId: string; id: string }): Promise<ContextMemory | null>;
@@ -141,3 +172,14 @@ export function normalizeMemoryInput(input: MemoryInput): MemoryInput;
 export function contentToSearchText(content: ContextContentItem[]): string;
 export function validateSelfHostedUrl(rawUrl: string, options?: { allowPublicHosts?: boolean; allowedDomains?: string[]; blockedHosts?: string[] }): URL;
 export function createContextManagerHandlers(manager: ContextManager, options?: Record<string, unknown>): { mount(app: unknown, basePath?: string): void };
+export function normalizeBooleanFlag(value: unknown, defaultValue?: boolean): boolean;
+export function normalizeContextConfig(input?: ContextWorkflowConfig): Required<ContextWorkflowConfig>;
+export function buildContextStatus(input?: ContextWorkflowConfig): Record<string, unknown>;
+export function trimText(value: unknown, maxChars: number): string;
+export function prepareRecentMessages(messages?: Array<Record<string, unknown>>, config?: ContextWorkflowConfig): Array<Record<string, unknown>>;
+export function prepareMemoryItems(memories?: Array<Record<string, unknown>>, config?: ContextWorkflowConfig): Array<Record<string, unknown>>;
+export function createContextInjectionStrategy(config?: ContextWorkflowConfig): Record<string, unknown>;
+export function buildMemoryText(userMessage?: string, assistantText?: string, config?: ContextWorkflowConfig): string;
+export function normalizeExtractedMemory(extractedMemory?: unknown, userMessage?: string, assistantText?: string, config?: ContextWorkflowConfig): { shouldRemember: boolean; text: string; category: string; confidence: number; metadata: Record<string, unknown> };
+export function buildBoundedChatContext(input: BoundedChatContextInput): Promise<{ context: Record<string, unknown>; diagnostics: Record<string, unknown>; memoryIds: string[] }>;
+export function buildContextConnectionTest(input?: ContextWorkflowConfig): Record<string, unknown>;

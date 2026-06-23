@@ -105,6 +105,53 @@ DELETE /api/context-manager/memory
 
 Your host application should add authentication, authorization, CSRF, audit logging, data export, and deletion policies.
 
+## Chat Workflow Helpers
+
+Host applications often need the same bounded context workflow around the provider API. The package exports reusable helpers so app code can stay focused on permissions, storage, and domain records:
+
+- `normalizeContextConfig`
+- `buildContextStatus`
+- `normalizeExtractedMemory`
+- `buildBoundedChatContext`
+- `buildContextConnectionTest`
+
+Example:
+
+```js
+const {
+  createContextManager,
+  buildBoundedChatContext,
+  normalizeExtractedMemory
+} = require("@richai/context-manager");
+
+const manager = createContextManager({ storage: yourStorageAdapter });
+
+const memory = normalizeExtractedMemory(llmMemoryJson, userText, assistantText, {
+  memoryTextChars: 900
+});
+
+if (memory.shouldRemember) {
+  await manager.add({
+    userId,
+    memory: memory.text,
+    category: memory.category,
+    metadata: memory.metadata,
+    confidence: memory.confidence
+  });
+}
+
+const { context, diagnostics } = await buildBoundedChatContext({
+  manager,
+  userId,
+  query: userText,
+  lifecycle: appLifecycleContext,
+  recentMessages: chatHistory,
+  config: { maxMemories: 8, recentMessageLimit: 8 }
+});
+```
+
+The helper returns a stable context object plus diagnostics. It does not know about your auth model, database schema, file storage, or product-specific lifecycle records.
+
 ## Mem0 OSS
 
 Mem0 OSS is optional and must be self-hosted:
