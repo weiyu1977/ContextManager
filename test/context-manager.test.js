@@ -11,6 +11,8 @@ const {
   normalizeExtractedMemory,
   buildBoundedChatContext,
   buildSessionSummary,
+  understandRawContext,
+  buildUserProfilePrompt,
   validateSelfHostedUrl,
   Mem0OssProvider
 } = require("../src");
@@ -96,6 +98,65 @@ test("normalizes multimodal context and supports content type filters", async ()
     filters: { contentTypes: ["audio"] }
   });
   assert.equal(audioResults.length, 1);
+});
+
+test("understands text, audio, and video context without requiring cloud providers", async () => {
+  const text = understandRawContext({
+    sourceType: "recommendation_input",
+    contentType: "text",
+    text: "My mother is 72, has hypertension, will stay in WA for 60 days, and wants PPO direct billing."
+  });
+  assert.equal(text.ok, true);
+  assert.equal(text.sourceType, "recommendation_input");
+  assert.ok(text.tags.includes("senior"));
+  assert.ok(text.tags.includes("pre_existing"));
+  assert.ok(text.tags.includes("network_billing"));
+  assert.deepEqual(text.structuredData.ages, [72]);
+  assert.equal(text.structuredData.durationDays, 60);
+
+  const audio = understandRawContext({ sourceType: "audio_transcript", contentType: "audio" });
+  assert.equal(audio.understandingStatus, "needs_transcription");
+  assert.ok(audio.tags.includes("needs_transcription"));
+
+  const video = understandRawContext({
+    sourceType: "video_summary",
+    contentType: "video",
+    transcript: "The policy mentions claim deadline and itemized bill requirements."
+  });
+  assert.equal(video.understandingStatus, "parsed");
+  assert.ok(video.tags.includes("claim_preparation"));
+});
+
+test("builds user profile prompts with confirmed context prioritized", async () => {
+  const manager = createContextManager();
+  const inferred = await manager.add({
+    userId: "prompt-user",
+    memory: "AI inferred a low deductible preference.",
+    category: "profile_patch",
+    confidence: 0.95,
+    metadata: { userConfirmed: false }
+  });
+  const confirmed = await manager.add({
+    userId: "prompt-user",
+    memory: "User confirmed the traveler is 72 and has hypertension.",
+    category: "profile_patch",
+    confidence: 0.7,
+    metadata: { userConfirmed: true }
+  });
+
+  const prompt = await manager.buildUserProfilePrompt({
+    userId: "prompt-user",
+    profile: { travelerAges: [72] },
+    question: "What insurance type should I compare?",
+    language: "en"
+  });
+  assert.equal(prompt.confirmedContextCount, 1);
+  assert.equal(prompt.usedContextIds[0], confirmed.id);
+  assert.ok(prompt.usedContextIds.includes(inferred.id));
+  assert.match(prompt.prompt, /confirmed the traveler is 72/);
+
+  const direct = buildUserProfilePrompt({ profile: { id: "u1" }, contexts: [confirmed], question: "test" });
+  assert.equal(direct.contextCount, 1);
 });
 
 test("buildContext returns lifecycle, recent messages, memory results, and diagnostics", async () => {

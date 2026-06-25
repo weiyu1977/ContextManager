@@ -27,6 +27,12 @@ const {
   buildBoundedChatContext,
   buildContextConnectionTest
 } = require("./chat-workflow");
+const {
+  CONTEXT_SOURCE_TYPES,
+  normalizeContextSourceType,
+  understandRawContext,
+  buildUserProfilePrompt
+} = require("./understanding");
 
 module.exports = {
   createContextManager,
@@ -54,5 +60,9 @@ module.exports = {
   normalizeExtractedMemory,
   buildSessionSummary,
   buildBoundedChatContext,
-  buildContextConnectionTest
+  buildContextConnectionTest,
+  CONTEXT_SOURCE_TYPES,
+  normalizeContextSourceType,
+  understandRawContext,
+  buildUserProfilePrompt
 };

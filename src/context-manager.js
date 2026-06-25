@@ -1,6 +1,7 @@
 const { InMemoryStorage } = require("./storage/memory-storage");
 const { LocalContextManagerProvider } = require("./providers/local-context-manager");
 const { Mem0OssProvider } = require("./providers/mem0-oss");
+const { understandRawContext, buildUserProfilePrompt } = require("./understanding");
 
 function createContextManager(options = {}) {
   return new ContextManager(options);
@@ -102,6 +103,28 @@ class ContextManager {
         lifecycleSections: Object.keys(lifecycle).filter((key) => Array.isArray(lifecycle[key]) ? lifecycle[key].length : Boolean(lifecycle[key]))
       }
     };
+  }
+
+  async understand(input = {}, options = {}) {
+    return understandRawContext(input, options);
+  }
+
+  async buildUserProfilePrompt(input = {}) {
+    const query = input.query || input.question || "";
+    const userId = input.userId || input.profile?.userId || input.profile?.id;
+    let contexts = Array.isArray(input.contexts)
+      ? input.contexts
+      : (userId ? await this.search({ userId, query, limit: input.limit || this.maxMemories }) : []);
+    if (!Array.isArray(input.contexts) && userId && !contexts.length) {
+      contexts = await this.list({ userId, limit: input.limit || this.maxMemories });
+    }
+    return buildUserProfilePrompt({
+      profile: input.profile || {},
+      contexts,
+      question: query,
+      language: input.language || "en",
+      maxContexts: input.maxContexts || input.limit || this.maxMemories
+    });
   }
 
   async testProvider(input = {}) {

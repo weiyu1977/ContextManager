@@ -1,5 +1,5 @@
 export type ContentType = "text" | "markdown" | "html" | "json" | "image" | "audio" | "video" | "file";
-export type ContextType = "chat" | "recommendation_input" | "profile_patch" | "policy_analysis" | "provider_search" | "file_summary" | "session_summary";
+export type ContextType = "chat" | "recommendation_input" | "profile_patch" | "policy_analysis" | "provider_search" | "file_summary" | "session_summary" | "audio_transcript" | "video_summary" | "document_upload" | "manual_note";
 
 export interface ContextContentItem {
   id?: string;
@@ -121,6 +121,56 @@ export interface ContextDiagnostics {
   lifecycleSections?: string[];
 }
 
+export interface RawContextUnderstandingInput {
+  sourceType?: string;
+  source?: string;
+  category?: string;
+  contentType?: ContentType | string;
+  text?: string;
+  transcript?: string;
+  rawData?: unknown;
+  content?: ContextContentItem[];
+  metadata?: Record<string, unknown>;
+  userConfirmed?: boolean;
+}
+
+export interface RawContextUnderstandingResult {
+  ok: boolean;
+  sourceType: string;
+  contentType: ContentType;
+  content: ContextContentItem[];
+  normalizedText: string;
+  transcript: string;
+  summary: string;
+  tags: string[];
+  structuredData: Record<string, unknown>;
+  confidence: number;
+  userConfirmed: boolean;
+  understandingStatus: string;
+  diagnostics: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+}
+
+export interface UserProfilePromptInput {
+  userId?: string;
+  profile?: Record<string, unknown>;
+  contexts?: ContextMemory[];
+  query?: string;
+  question?: string;
+  language?: string;
+  maxContexts?: number;
+  limit?: number;
+}
+
+export interface UserProfilePromptResult {
+  prompt: string;
+  usedContextIds: string[];
+  profileSnapshot: Record<string, unknown>;
+  contextCount: number;
+  confirmedContextCount: number;
+  diagnostics: Record<string, unknown>;
+}
+
 export interface BoundedChatContextInput {
   manager: ContextManager;
   userId: string;
@@ -165,6 +215,8 @@ export class ContextManager {
   delete(input: { userId: string; id: string }): Promise<boolean>;
   clear(input: { userId: string }): Promise<number>;
   buildContext(input: { userId: string; query?: string; recentMessages?: unknown[]; lifecycle?: Record<string, unknown>; limit?: number }): Promise<{ context: Record<string, unknown>; diagnostics: ContextDiagnostics }>;
+  understand(input: RawContextUnderstandingInput, options?: Record<string, unknown>): Promise<RawContextUnderstandingResult>;
+  buildUserProfilePrompt(input: UserProfilePromptInput): Promise<UserProfilePromptResult>;
   testProvider(input?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
@@ -193,7 +245,9 @@ export function validateSelfHostedUrl(rawUrl: string, options?: { allowPublicHos
 export function createContextManagerHandlers(manager: ContextManager, options?: Record<string, unknown>): { mount(app: unknown, basePath?: string): void };
 export function normalizeBooleanFlag(value: unknown, defaultValue?: boolean): boolean;
 export const CONTEXT_TYPES: readonly ContextType[];
+export const CONTEXT_SOURCE_TYPES: readonly string[];
 export function normalizeContextType(value?: unknown, fallback?: ContextType): ContextType;
+export function normalizeContextSourceType(value?: unknown, fallback?: string): string;
 export function listContextProviderAdapters(): Array<Record<string, unknown>>;
 export function normalizeContextConfig(input?: ContextWorkflowConfig): Required<ContextWorkflowConfig>;
 export function buildContextStatus(input?: ContextWorkflowConfig): Record<string, unknown>;
@@ -206,3 +260,5 @@ export function normalizeExtractedMemory(extractedMemory?: unknown, userMessage?
 export function buildSessionSummary(messages?: Array<Record<string, unknown>>, config?: ContextWorkflowConfig): null | Record<string, unknown>;
 export function buildBoundedChatContext(input: BoundedChatContextInput): Promise<{ context: Record<string, unknown>; diagnostics: ContextDiagnostics; memoryIds: string[] }>;
 export function buildContextConnectionTest(input?: ContextWorkflowConfig): Record<string, unknown>;
+export function understandRawContext(input?: RawContextUnderstandingInput, options?: Record<string, unknown>): RawContextUnderstandingResult;
+export function buildUserProfilePrompt(input?: UserProfilePromptInput): UserProfilePromptResult;
