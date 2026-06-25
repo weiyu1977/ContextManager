@@ -30,12 +30,16 @@ function understandRawContext(input = {}, options = {}) {
   const sourceType = normalizeContextSourceType(input.sourceType || input.source || input.category, options.defaultSourceType || "chat");
   const content = normalizeContentItems(input.content || buildContentFromInput(input));
   const primaryContentType = normalizeContentType(input.contentType || content[0]?.type || "text");
-  const normalizedText = trimText(input.text || input.transcript || contentToSearchText(content) || stringifyRawData(input.rawData), options.maxTextChars || 8000);
+  const directText = trimText(input.text || "", options.maxTextChars || 8000);
+  const directTranscript = trimText(input.transcript || "", options.maxTextChars || 8000);
+  const isAudioVideo = primaryContentType === "audio" || primaryContentType === "video";
+  const mediaHasTranscript = Boolean(directText || directTranscript || contentHasTranscript(content));
+  const rawDataText = isAudioVideo && !mediaHasTranscript ? "" : stringifyRawData(input.rawData);
+  const normalizedText = trimText(directText || directTranscript || contentToSearchText(content) || rawDataText, options.maxTextChars || 8000);
   const parsedJson = parseJsonLike(input.rawData ?? input.text);
   const textForAnalysis = normalizedText || stringifyRawData(parsedJson);
   const analysis = analyzeInsuranceText(textForAnalysis);
-  const isAudioVideo = primaryContentType === "audio" || primaryContentType === "video";
-  const needsTranscription = isAudioVideo && !textForAnalysis;
+  const needsTranscription = isAudioVideo && !mediaHasTranscript;
   const tags = uniqueStrings([
     sourceType,
     primaryContentType,
@@ -51,8 +55,8 @@ function understandRawContext(input = {}, options = {}) {
     sourceType,
     contentType: primaryContentType,
     content,
-    normalizedText: textForAnalysis,
-    transcript: input.transcript || (isAudioVideo ? textForAnalysis : ""),
+    normalizedText: needsTranscription ? "" : textForAnalysis,
+    transcript: input.transcript || (isAudioVideo && mediaHasTranscript ? textForAnalysis : ""),
     summary,
     tags,
     structuredData: {
@@ -66,7 +70,7 @@ function understandRawContext(input = {}, options = {}) {
       parser: "local_context_understanding_v1",
       transcriptionRequired: needsTranscription,
       externalProviderUsed: false,
-      textLength: textForAnalysis.length,
+      textLength: needsTranscription ? 0 : textForAnalysis.length,
       tagCount: tags.length
     },
     metadata: {
@@ -75,6 +79,15 @@ function understandRawContext(input = {}, options = {}) {
       contentType: primaryContentType
     }
   };
+}
+
+function contentHasTranscript(content) {
+  return (Array.isArray(content) ? content : []).some((item) => {
+    if (!item) return false;
+    if (trimText(item.transcript || "")) return true;
+    if ((item.type === "audio" || item.type === "video") && trimText(item.text || "")) return true;
+    return false;
+  });
 }
 
 function buildUserProfilePrompt({ profile = {}, contexts = [], question = "", language = "en", maxContexts = 8 } = {}) {
