@@ -1,7 +1,7 @@
 const { InMemoryStorage } = require("./storage/memory-storage");
 const { LocalContextManagerProvider } = require("./providers/local-context-manager");
 const { Mem0OssProvider } = require("./providers/mem0-oss");
-const { understandRawContext, buildUserProfilePrompt } = require("./understanding");
+const { understandRawContext, buildUserProfilePrompt, buildContextSummaryPrompt } = require("./understanding");
 
 function createContextManager(options = {}) {
   return new ContextManager(options);
@@ -124,6 +124,21 @@ class ContextManager {
       question: query,
       language: input.language || "en",
       maxContexts: input.maxContexts || input.limit || this.maxMemories
+    });
+  }
+
+  async buildContextSummaryPrompt(input = {}) {
+    const userId = input.userId || input.profile?.userId || input.profile?.id;
+    let contexts = Array.isArray(input.contexts)
+      ? input.contexts
+      : (userId ? await this.list({ userId, limit: input.limit || input.maxContexts || this.maxMemories }) : []);
+    return buildContextSummaryPrompt({
+      profile: input.profile || {},
+      contexts,
+      language: input.language || "en",
+      maxContexts: input.maxContexts || input.limit || 30,
+      task: input.task || "profile_update",
+      extraInstructions: input.extraInstructions || ""
     });
   }
 

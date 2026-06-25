@@ -31,7 +31,9 @@ const {
   CONTEXT_SOURCE_TYPES,
   normalizeContextSourceType,
   understandRawContext,
-  buildUserProfilePrompt
+  buildUserProfilePrompt,
+  buildContextSummaryPrompt,
+  normalizeContextSummaryResult
 } = require("./understanding");
 
 module.exports = {
@@ -64,5 +66,7 @@ module.exports = {
   CONTEXT_SOURCE_TYPES,
   normalizeContextSourceType,
   understandRawContext,
-  buildUserProfilePrompt
+  buildUserProfilePrompt,
+  buildContextSummaryPrompt,
+  normalizeContextSummaryResult
 };

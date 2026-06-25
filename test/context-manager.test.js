@@ -13,6 +13,8 @@ const {
   buildSessionSummary,
   understandRawContext,
   buildUserProfilePrompt,
+  buildContextSummaryPrompt,
+  normalizeContextSummaryResult,
   validateSelfHostedUrl,
   Mem0OssProvider
 } = require("../src");
@@ -189,6 +191,54 @@ test("builds user profile prompts with confirmed context prioritized", async () 
 
   const direct = buildUserProfilePrompt({ profile: { id: "u1" }, contexts: [confirmed], question: "test" });
   assert.equal(direct.contextCount, 1);
+});
+
+test("builds context summary prompts and normalizes LLM summary output", async () => {
+  const manager = createContextManager();
+  const inferred = await manager.add({
+    userId: "summary-user",
+    memory: "AI inferred the traveler may prefer a high maximum.",
+    category: "profile_patch",
+    confidence: 0.9,
+    metadata: { userConfirmed: false }
+  });
+  const confirmed = await manager.add({
+    userId: "summary-user",
+    memory: "User confirmed father is 72, has hypertension, and will stay 60 days in Washington.",
+    category: "profile_patch",
+    confidence: 0.75,
+    metadata: { userConfirmed: true }
+  });
+
+  const prompt = await manager.buildContextSummaryPrompt({
+    userId: "summary-user",
+    profile: { travelerAges: [72] },
+    maxContexts: 10
+  });
+  assert.equal(prompt.confirmedContextCount, 1);
+  assert.equal(prompt.usedContextIds[0], confirmed.id);
+  assert.ok(prompt.usedContextIds.includes(inferred.id));
+  assert.match(prompt.prompt, /Return strict JSON only/);
+
+  const directPrompt = buildContextSummaryPrompt({
+    profile: {},
+    contexts: [confirmed],
+    extraInstructions: "Only propose pending patches."
+  });
+  assert.equal(directPrompt.contextCount, 1);
+  assert.match(directPrompt.prompt, /Only propose pending patches/);
+
+  const normalized = normalizeContextSummaryResult("```json\n{\"summary\":\"Senior visitor with chronic condition.\",\"profilePatch\":{\"travelerAges\":[72]},\"tags\":[\"senior\"],\"confidence\":\"high\",\"sourceContextIds\":[\"" + confirmed.id + "\"],\"manualReviewRequired\":true}\n```");
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.confidence, "high");
+  assert.equal(normalized.profilePatch.travelerAges[0], 72);
+  assert.equal(normalized.sourceContextIds[0], confirmed.id);
+
+  const fallback = normalizeContextSummaryResult("not json", { fallbackText: "Plain text summary" });
+  assert.equal(fallback.ok, false);
+  assert.equal(fallback.confidence, "low");
+  assert.equal(fallback.manualReviewRequired, true);
+  assert.equal(fallback.summary, "Plain text summary");
 });
 
 test("buildContext returns lifecycle, recent messages, memory results, and diagnostics", async () => {

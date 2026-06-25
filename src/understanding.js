@@ -173,6 +173,175 @@ function buildUserProfilePrompt({ profile = {}, contexts = [], question = "", la
   };
 }
 
+function buildContextSummaryPrompt({
+  profile = {},
+  contexts = [],
+  language = "en",
+  maxContexts = 30,
+  task = "profile_update",
+  extraInstructions = ""
+} = {}) {
+  const selected = preparePromptContexts(contexts, maxContexts);
+  const contextLines = selected.length
+    ? selected.map((item, index) => [
+        `${index + 1}. id=${item.id || ""}`,
+        `type=${item.category || item.sourceType || item.metadata?.sourceType || "context"}`,
+        `confirmed=${item.userConfirmed ? "true" : "false"}`,
+        `confidence=${Number.isFinite(item.confidence) ? item.confidence : ""}`,
+        `text=${trimText(item.text || item.memory || item.summary || "", 900)}`
+      ].join("; ")).join("\n")
+    : "No stored context is available.";
+  const expectedSchema = {
+    summary: "short user-facing lifecycle summary",
+    profilePatch: {},
+    tags: [],
+    confidence: "low|medium|high",
+    missingQuestions: [],
+    sourceContextIds: [],
+    manualReviewRequired: false
+  };
+  const prompt = [
+    "You summarize stored context for an insurance decision-support system.",
+    "Use confirmed context as facts. Treat unconfirmed or AI-inferred context as tentative.",
+    "Do not overwrite user profile directly. Produce a proposed profilePatch that must be reviewed by the host application.",
+    "Do not invent eligibility, prices, PPO/network status, or claim outcomes.",
+    `Task: ${task || "profile_update"}.`,
+    `Response language: ${language || "en"}.`,
+    "",
+    "Current user profile JSON:",
+    JSON.stringify(profile || {}, null, 2),
+    "",
+    "Stored context items:",
+    contextLines,
+    "",
+    extraInstructions ? `Additional instructions:\n${String(extraInstructions).trim()}\n` : "",
+    "Return strict JSON only. Do not use Markdown fences.",
+    "Required JSON schema:",
+    JSON.stringify(expectedSchema, null, 2)
+  ].filter(Boolean).join("\n");
+
+  return {
+    prompt,
+    usedContextIds: selected.map((item) => item.id).filter(Boolean),
+    profileSnapshot: profile || {},
+    contextCount: selected.length,
+    confirmedContextCount: selected.filter((item) => item.userConfirmed).length,
+    expectedSchema,
+    diagnostics: {
+      builder: "context_summary_prompt_v1",
+      maxContexts,
+      language,
+      task
+    }
+  };
+}
+
+function normalizeContextSummaryResult(raw, { fallbackText = "" } = {}) {
+  const parsed = parseJsonCandidate(raw);
+  const source = parsed.value && typeof parsed.value === "object" && !Array.isArray(parsed.value) ? parsed.value : null;
+  if (!source) {
+    const text = trimText(fallbackText || stringifyRawData(raw), 1200);
+    return {
+      ok: false,
+      summary: text,
+      profilePatch: {},
+      tags: [],
+      confidence: "low",
+      missingQuestions: [],
+      sourceContextIds: [],
+      manualReviewRequired: true,
+      diagnostics: {
+        parser: "context_summary_result_normalizer_v1",
+        parseMethod: parsed.method,
+        parseError: parsed.error || "not_an_object",
+        fallback: true
+      },
+      raw
+    };
+  }
+
+  return {
+    ok: true,
+    summary: trimText(source.summary || source.text || source.answer || "", 4000),
+    profilePatch: source.profilePatch && typeof source.profilePatch === "object" && !Array.isArray(source.profilePatch) ? source.profilePatch : {},
+    tags: uniqueStrings(source.tags || source.labels || []),
+    confidence: normalizeConfidence(source.confidence),
+    missingQuestions: uniqueStrings(source.missingQuestions || source.questions || []),
+    sourceContextIds: uniqueStrings(source.sourceContextIds || source.contextIds || []),
+    manualReviewRequired: Boolean(source.manualReviewRequired || source.needsReview),
+    diagnostics: {
+      parser: "context_summary_result_normalizer_v1",
+      parseMethod: parsed.method,
+      fallback: false
+    },
+    raw
+  };
+}
+
+function parseJsonCandidate(raw) {
+  if (raw && typeof raw === "object") return { value: raw, method: "object" };
+  const text = String(raw || "").trim();
+  if (!text) return { value: null, method: "empty", error: "empty" };
+  try {
+    return { value: JSON.parse(text), method: "direct_json" };
+  } catch (error) {
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) {
+      try {
+        return { value: JSON.parse(fenced[1].trim()), method: "fenced_json" };
+      } catch {}
+    }
+    const balanced = firstBalancedJsonObject(text);
+    if (balanced) {
+      try {
+        return { value: JSON.parse(balanced), method: "balanced_json" };
+      } catch (balancedError) {
+        return { value: null, method: "balanced_json_failed", error: balancedError.message };
+      }
+    }
+    return { value: null, method: "direct_json_failed", error: error.message };
+  }
+}
+
+function firstBalancedJsonObject(text) {
+  const start = String(text || "").indexOf("{");
+  if (start < 0) return "";
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === "\\") {
+      escape = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return text.slice(start, index + 1);
+  }
+  return "";
+}
+
+function normalizeConfidence(value) {
+  const text = String(value || "").toLowerCase();
+  if (["high", "medium", "low"].includes(text)) return text;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    if (numeric >= 0.75) return "high";
+    if (numeric >= 0.45) return "medium";
+  }
+  return "low";
+}
+
 function buildContentFromInput(input) {
   if (input.text) return [{ type: "text", text: input.text }];
   if (input.transcript) return [{ type: input.contentType || "audio", transcript: input.transcript, text: input.transcript }];
@@ -314,5 +483,7 @@ module.exports = {
   CONTEXT_SOURCE_TYPES,
   normalizeContextSourceType,
   understandRawContext,
-  buildUserProfilePrompt
+  buildUserProfilePrompt,
+  buildContextSummaryPrompt,
+  normalizeContextSummaryResult
 };

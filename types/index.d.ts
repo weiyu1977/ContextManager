@@ -171,6 +171,40 @@ export interface UserProfilePromptResult {
   diagnostics: Record<string, unknown>;
 }
 
+export interface ContextSummaryPromptInput {
+  userId?: string;
+  profile?: Record<string, unknown>;
+  contexts?: ContextMemory[];
+  language?: string;
+  maxContexts?: number;
+  limit?: number;
+  task?: string;
+  extraInstructions?: string;
+}
+
+export interface ContextSummaryPromptResult {
+  prompt: string;
+  usedContextIds: string[];
+  profileSnapshot: Record<string, unknown>;
+  contextCount: number;
+  confirmedContextCount: number;
+  expectedSchema: Record<string, unknown>;
+  diagnostics: Record<string, unknown>;
+}
+
+export interface NormalizedContextSummaryResult {
+  ok: boolean;
+  summary: string;
+  profilePatch: Record<string, unknown>;
+  tags: string[];
+  confidence: "low" | "medium" | "high";
+  missingQuestions: string[];
+  sourceContextIds: string[];
+  manualReviewRequired: boolean;
+  diagnostics: Record<string, unknown>;
+  raw?: unknown;
+}
+
 export interface BoundedChatContextInput {
   manager: ContextManager;
   userId: string;
@@ -217,6 +251,7 @@ export class ContextManager {
   buildContext(input: { userId: string; query?: string; recentMessages?: unknown[]; lifecycle?: Record<string, unknown>; limit?: number }): Promise<{ context: Record<string, unknown>; diagnostics: ContextDiagnostics }>;
   understand(input: RawContextUnderstandingInput, options?: Record<string, unknown>): Promise<RawContextUnderstandingResult>;
   buildUserProfilePrompt(input: UserProfilePromptInput): Promise<UserProfilePromptResult>;
+  buildContextSummaryPrompt(input: ContextSummaryPromptInput): Promise<ContextSummaryPromptResult>;
   testProvider(input?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
@@ -248,6 +283,8 @@ export const CONTEXT_TYPES: readonly ContextType[];
 export const CONTEXT_SOURCE_TYPES: readonly string[];
 export function normalizeContextType(value?: unknown, fallback?: ContextType): ContextType;
 export function normalizeContextSourceType(value?: unknown, fallback?: string): string;
+export function buildContextSummaryPrompt(input?: ContextSummaryPromptInput): ContextSummaryPromptResult;
+export function normalizeContextSummaryResult(raw?: unknown, options?: { fallbackText?: string }): NormalizedContextSummaryResult;
 export function listContextProviderAdapters(): Array<Record<string, unknown>>;
 export function normalizeContextConfig(input?: ContextWorkflowConfig): Required<ContextWorkflowConfig>;
 export function buildContextStatus(input?: ContextWorkflowConfig): Record<string, unknown>;
