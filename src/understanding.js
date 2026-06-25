@@ -94,12 +94,24 @@ function contentHasTranscript(content) {
 }
 
 function determineExtractionNeed(primaryContentType, content, directText, directTranscript) {
-  const hasUsableText = Boolean(directText || directTranscript || contentHasSemanticText(content));
+  const hasUsableText = primaryContentType === "audio" || primaryContentType === "video"
+    ? Boolean(directText || directTranscript || contentHasMediaSemanticText(content))
+    : Boolean(directText || directTranscript || contentHasSemanticText(content));
   if (hasUsableText) return "";
   if (primaryContentType === "audio" || primaryContentType === "video") return "needs_transcription";
   if (primaryContentType === "image") return "needs_visual_analysis";
   if (primaryContentType === "file") return "needs_text_extraction";
   return "";
+}
+
+function contentHasMediaSemanticText(content) {
+  return (Array.isArray(content) ? content : []).some((item) => {
+    if (!item) return false;
+    if (trimText(item.transcript || "")) return true;
+    if (["text", "markdown", "html"].includes(item.type) && trimText(item.text || "")) return true;
+    if (trimText(item.description || "")) return true;
+    return false;
+  });
 }
 
 function contentHasSemanticText(content) {

@@ -136,6 +136,14 @@ test("understands text, audio, and video context without requiring cloud provide
   assert.equal(video.understandingStatus, "parsed");
   assert.ok(video.tags.includes("claim_preparation"));
 
+  const videoMetadataOnly = understandRawContext({
+    sourceType: "video_summary",
+    contentType: "video",
+    rawData: { fileName: "parent-trip-call.mp4", mimeType: "video/mp4" }
+  });
+  assert.equal(videoMetadataOnly.understandingStatus, "needs_transcription");
+  assert.ok(videoMetadataOnly.tags.includes("needs_transcription"));
+
   const image = understandRawContext({
     sourceType: "document_upload",
     content: [{ type: "image", name: "insurance-card.png", mimeType: "image/png", url: "s3://bucket/card.png" }]
