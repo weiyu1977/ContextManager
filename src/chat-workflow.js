@@ -15,19 +15,30 @@ function clampNumber(value, fallback, min, max) {
 
 const CONTEXT_TYPES = Object.freeze([
   "chat",
+  "user_profile",
   "recommendation_input",
   "profile_patch",
   "policy_analysis",
   "provider_search",
   "file_summary",
-  "session_summary"
+  "session_summary",
+  "audio_transcript",
+  "video_summary",
+  "document_upload",
+  "manual_note"
 ]);
 
 const LEGACY_CONTEXT_TYPE_MAP = Object.freeze({
   conversation: "chat",
+  message: "chat",
+  profile: "user_profile",
   policy: "policy_analysis",
+  document: "document_upload",
   provider: "provider_search",
-  recommendation: "recommendation_input"
+  recommendation: "recommendation_input",
+  audio: "audio_transcript",
+  video: "video_summary",
+  note: "manual_note"
 });
 
 function normalizeContextType(value, fallback = "chat") {

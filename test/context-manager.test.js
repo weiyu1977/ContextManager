@@ -83,6 +83,8 @@ test("normalizes multimodal context and supports content type filters", async ()
   const manager = createContextManager();
   const content = normalizeContentItems(multimodalFixture);
   assert.deepEqual(content.map((item) => item.type), ["text", "file", "image", "audio", "video"]);
+  assert.match(content.find((item) => item.type === "image").description, /Insurance ID card/);
+  assert.match(content.find((item) => item.type === "audio").transcript, /claim form/);
 
   await manager.add(multimodalFixture);
   const fileResults = await manager.search({
@@ -118,6 +120,14 @@ test("understands text, audio, and video context without requiring cloud provide
   assert.equal(audio.understandingStatus, "needs_transcription");
   assert.ok(audio.tags.includes("needs_transcription"));
 
+  const audioWithTranscript = understandRawContext({
+    sourceType: "audio_transcript",
+    contentType: "audio",
+    transcript: "My father is 76 and needs direct billing for urgent care."
+  });
+  assert.equal(audioWithTranscript.understandingStatus, "parsed");
+  assert.ok(audioWithTranscript.tags.includes("senior"));
+
   const video = understandRawContext({
     sourceType: "video_summary",
     contentType: "video",
@@ -125,6 +135,20 @@ test("understands text, audio, and video context without requiring cloud provide
   });
   assert.equal(video.understandingStatus, "parsed");
   assert.ok(video.tags.includes("claim_preparation"));
+
+  const image = understandRawContext({
+    sourceType: "document_upload",
+    content: [{ type: "image", name: "insurance-card.png", mimeType: "image/png", url: "s3://bucket/card.png" }]
+  });
+  assert.equal(image.understandingStatus, "needs_visual_analysis");
+  assert.ok(image.tags.includes("needs_visual_analysis"));
+
+  const file = understandRawContext({
+    sourceType: "document_upload",
+    content: [{ type: "file", name: "policy.pdf", mimeType: "application/pdf", url: "s3://bucket/policy.pdf" }]
+  });
+  assert.equal(file.understandingStatus, "needs_text_extraction");
+  assert.ok(file.tags.includes("needs_text_extraction"));
 });
 
 test("builds user profile prompts with confirmed context prioritized", async () => {
@@ -229,7 +253,12 @@ test("chat workflow helpers normalize memory extraction and bounded context", as
 
 test("chat workflow exposes context types, adapters, confirmed priority, summaries, and fallback diagnostics", async () => {
   assert.ok(CONTEXT_TYPES.includes("policy_analysis"));
+  assert.ok(CONTEXT_TYPES.includes("audio_transcript"));
+  assert.ok(CONTEXT_TYPES.includes("video_summary"));
+  assert.ok(CONTEXT_TYPES.includes("document_upload"));
   assert.equal(normalizeContextType("conversation"), "chat");
+  assert.equal(normalizeContextType("audio"), "audio_transcript");
+  assert.equal(normalizeContextType("video"), "video_summary");
   assert.ok(listContextProviderAdapters().some((adapter) => adapter.id === "gemini_embedding"));
 
   const manager = createContextManager({ maxMemories: 5 });

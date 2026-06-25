@@ -34,20 +34,21 @@ function understandRawContext(input = {}, options = {}) {
   const directTranscript = trimText(input.transcript || "", options.maxTextChars || 8000);
   const isAudioVideo = primaryContentType === "audio" || primaryContentType === "video";
   const mediaHasTranscript = Boolean(directText || directTranscript || contentHasTranscript(content));
-  const rawDataText = isAudioVideo && !mediaHasTranscript ? "" : stringifyRawData(input.rawData);
+  const needsExtraction = determineExtractionNeed(primaryContentType, content, directText, directTranscript);
+  const rawDataText = needsExtraction ? "" : stringifyRawData(input.rawData);
   const normalizedText = trimText(directText || directTranscript || contentToSearchText(content) || rawDataText, options.maxTextChars || 8000);
   const parsedJson = parseJsonLike(input.rawData ?? input.text);
   const textForAnalysis = normalizedText || stringifyRawData(parsedJson);
   const analysis = analyzeInsuranceText(textForAnalysis);
-  const needsTranscription = isAudioVideo && !mediaHasTranscript;
+  const needsTranscription = needsExtraction === "needs_transcription";
   const tags = uniqueStrings([
     sourceType,
     primaryContentType,
     ...analysis.tags,
-    ...(needsTranscription ? ["needs_transcription"] : [])
+    ...(needsExtraction ? [needsExtraction] : [])
   ]);
-  const summary = needsTranscription
-    ? `${primaryContentType} context received; transcription is required before semantic extraction.`
+  const summary = needsExtraction
+    ? buildExtractionSummary(primaryContentType, needsExtraction)
     : buildSummary(textForAnalysis, analysis, sourceType);
 
   return {
@@ -55,7 +56,7 @@ function understandRawContext(input = {}, options = {}) {
     sourceType,
     contentType: primaryContentType,
     content,
-    normalizedText: needsTranscription ? "" : textForAnalysis,
+    normalizedText: needsExtraction ? "" : textForAnalysis,
     transcript: input.transcript || (isAudioVideo && mediaHasTranscript ? textForAnalysis : ""),
     summary,
     tags,
@@ -63,14 +64,16 @@ function understandRawContext(input = {}, options = {}) {
       ...analysis.structuredData,
       rawJsonKeys: parsedJson && typeof parsedJson === "object" && !Array.isArray(parsedJson) ? Object.keys(parsedJson).slice(0, 30) : []
     },
-    confidence: needsTranscription ? 0.2 : analysis.confidence,
+    confidence: needsExtraction ? 0.2 : analysis.confidence,
     userConfirmed: Boolean(input.userConfirmed || input.metadata?.userConfirmed),
-    understandingStatus: needsTranscription ? "needs_transcription" : "parsed",
+    understandingStatus: needsExtraction || "parsed",
     diagnostics: {
       parser: "local_context_understanding_v1",
       transcriptionRequired: needsTranscription,
+      extractionRequired: Boolean(needsExtraction),
+      extractionType: needsExtraction || "",
       externalProviderUsed: false,
-      textLength: needsTranscription ? 0 : textForAnalysis.length,
+      textLength: needsExtraction ? 0 : textForAnalysis.length,
       tagCount: tags.length
     },
     metadata: {
@@ -88,6 +91,38 @@ function contentHasTranscript(content) {
     if ((item.type === "audio" || item.type === "video") && trimText(item.text || "")) return true;
     return false;
   });
+}
+
+function determineExtractionNeed(primaryContentType, content, directText, directTranscript) {
+  const hasUsableText = Boolean(directText || directTranscript || contentHasSemanticText(content));
+  if (hasUsableText) return "";
+  if (primaryContentType === "audio" || primaryContentType === "video") return "needs_transcription";
+  if (primaryContentType === "image") return "needs_visual_analysis";
+  if (primaryContentType === "file") return "needs_text_extraction";
+  return "";
+}
+
+function contentHasSemanticText(content) {
+  return (Array.isArray(content) ? content : []).some((item) => {
+    if (!item) return false;
+    if (trimText(item.text || "")) return true;
+    if (trimText(item.transcript || "")) return true;
+    if ((item.type === "image" || item.type === "file") && trimText(item.description || "")) return true;
+    return false;
+  });
+}
+
+function buildExtractionSummary(primaryContentType, extractionNeed) {
+  if (extractionNeed === "needs_transcription") {
+    return `${primaryContentType} context received; transcription is required before semantic extraction.`;
+  }
+  if (extractionNeed === "needs_visual_analysis") {
+    return "Image context received; visual analysis or OCR is required before semantic extraction.";
+  }
+  if (extractionNeed === "needs_text_extraction") {
+    return "File context received; text extraction, OCR, or document understanding is required before semantic extraction.";
+  }
+  return `${primaryContentType} context received; additional extraction is required before semantic extraction.`;
 }
 
 function buildUserProfilePrompt({ profile = {}, contexts = [], question = "", language = "en", maxContexts = 8 } = {}) {
