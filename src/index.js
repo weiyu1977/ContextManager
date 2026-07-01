@@ -6,6 +6,8 @@ const {
   supportedContentTypes,
   normalizeContentItems,
   normalizeMemoryInput,
+  normalizeImportance,
+  normalizeRetention,
   contentToSearchText
 } = require("./content");
 const { validateSelfHostedUrl } = require("./security");
@@ -35,6 +37,26 @@ const {
   buildContextSummaryPrompt,
   normalizeContextSummaryResult
 } = require("./understanding");
+const {
+  normalizeContextEvent,
+  contextEventToMemory,
+  buildDedupeKey,
+  scoreContextImportance
+} = require("./events");
+const {
+  buildTaskContextPack,
+  buildDecisionContextPack,
+  buildConnectorContextPack
+} = require("./context-packs");
+const {
+  DomainPluginRegistry,
+  createDomainPluginRegistry,
+  commerceGrowthPlugin
+} = require("./plugins");
+const {
+  LlmContextProviderContract,
+  createLlmContextProviderContract
+} = require("./provider-contract");
 
 module.exports = {
   createContextManager,
@@ -45,6 +67,8 @@ module.exports = {
   supportedContentTypes,
   normalizeContentItems,
   normalizeMemoryInput,
+  normalizeImportance,
+  normalizeRetention,
   contentToSearchText,
   validateSelfHostedUrl,
   createContextManagerHandlers,
@@ -68,5 +92,17 @@ module.exports = {
   understandRawContext,
   buildUserProfilePrompt,
   buildContextSummaryPrompt,
-  normalizeContextSummaryResult
+  normalizeContextSummaryResult,
+  normalizeContextEvent,
+  contextEventToMemory,
+  buildDedupeKey,
+  scoreContextImportance,
+  buildTaskContextPack,
+  buildDecisionContextPack,
+  buildConnectorContextPack,
+  DomainPluginRegistry,
+  createDomainPluginRegistry,
+  commerceGrowthPlugin,
+  LlmContextProviderContract,
+  createLlmContextProviderContract
 };

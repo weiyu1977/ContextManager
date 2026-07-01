@@ -9,6 +9,13 @@ const {
   normalizeContentItems,
   normalizeContextConfig,
   normalizeExtractedMemory,
+  normalizeContextEvent,
+  contextEventToMemory,
+  buildTaskContextPack,
+  buildDecisionContextPack,
+  buildConnectorContextPack,
+  commerceGrowthPlugin,
+  createLlmContextProviderContract,
   buildBoundedChatContext,
   buildSessionSummary,
   understandRawContext,
@@ -314,7 +321,10 @@ test("chat workflow exposes context types, adapters, confirmed priority, summari
   assert.ok(CONTEXT_TYPES.includes("audio_transcript"));
   assert.ok(CONTEXT_TYPES.includes("video_summary"));
   assert.ok(CONTEXT_TYPES.includes("document_upload"));
+  assert.ok(CONTEXT_TYPES.includes("growth_outcome"));
+  assert.ok(CONTEXT_TYPES.includes("connector_event"));
   assert.equal(normalizeContextType("conversation"), "chat");
+  assert.equal(normalizeContextType("offer"), "offer_memory");
   assert.equal(normalizeContextType("audio"), "audio_transcript");
   assert.equal(normalizeContextType("video"), "video_summary");
   assert.ok(listContextProviderAdapters().some((adapter) => adapter.id === "gemini_embedding"));
@@ -366,6 +376,201 @@ test("chat workflow exposes context types, adapters, confirmed priority, summari
   assert.equal(fallback.context.memories.length, 0);
   assert.equal(fallback.context.recentMessages.length, 1);
   assert.match(fallback.diagnostics.errors.retrieval, /temporary retrieval outage/);
+});
+
+test("storage contract preserves workspace, subject, tags, retention, and importance", async () => {
+  const manager = createContextManager();
+  const saved = await manager.add({
+    workspaceId: "workspace-1",
+    tenantId: "tenant-a",
+    userId: "commerce-user",
+    memory: "LinkedIn offer won two qualified calls at $299 starter package.",
+    category: "growth_outcome",
+    source: "outcome_tracker",
+    subjectType: "offer",
+    subjectId: "offer-123",
+    importance: 0.91,
+    retention: "long_term",
+    expiresAt: "2026-12-31T00:00:00.000Z",
+    tags: ["linkedin", "starter"],
+    dedupeKey: "workspace-1:offer-123:win"
+  });
+
+  assert.equal(saved.workspaceId, "workspace-1");
+  assert.equal(saved.tenantId, "tenant-a");
+  assert.equal(saved.category, "growth_outcome");
+  assert.equal(saved.source, "outcome_tracker");
+  assert.equal(saved.subjectType, "offer");
+  assert.equal(saved.subjectId, "offer-123");
+  assert.equal(saved.importance, 0.91);
+  assert.equal(saved.retention, "long_term");
+  assert.deepEqual(saved.tags, ["linkedin", "starter"]);
+
+  const filtered = await manager.search({
+    userId: "commerce-user",
+    query: "qualified calls",
+    filters: {
+      workspaceId: "workspace-1",
+      tenantId: "tenant-a",
+      source: "outcome_tracker",
+      subjectType: "offer",
+      subjectId: "offer-123",
+      tags: ["linkedin"]
+    }
+  });
+  assert.equal(filtered.length, 1);
+
+  const updated = await manager.update({
+    userId: "commerce-user",
+    id: saved.id,
+    memory: "LinkedIn offer won three qualified calls.",
+    importance: 0.96,
+    tags: ["linkedin", "proven"]
+  });
+  assert.equal(updated.importance, 0.96);
+  assert.deepEqual(updated.tags, ["linkedin", "proven"]);
+});
+
+test("context event normalizer turns connector and outcome events into memories", () => {
+  const event = normalizeContextEvent({
+    workspaceId: "workspace-1",
+    userId: "growth-user",
+    eventType: "stripe.order.paid",
+    source: "stripe",
+    subjectType: "offer",
+    subjectId: "offer-1",
+    title: "Starter package paid",
+    summary: "Customer paid for the first revenue starter offer.",
+    outcome: "win",
+    tags: ["paid", "starter"]
+  });
+
+  assert.equal(event.category, "growth_outcome");
+  assert.equal(event.importance >= 0.8, true);
+  assert.match(event.dedupeKey, /workspace-1:growth-user:stripe:stripe\.order\.paid/);
+
+  const memory = contextEventToMemory(event);
+  assert.equal(memory.category, "growth_outcome");
+  assert.equal(memory.source, "stripe");
+  assert.equal(memory.subjectId, "offer-1");
+  assert.match(memory.memory, /Starter package paid/);
+  assert.equal(memory.metadata.outcome, "win");
+
+  const connector = normalizeContextEvent({
+    userId: "growth-user",
+    eventType: "shopify.draft.created",
+    source: "shopify",
+    subjectType: "product",
+    subjectId: "product-1"
+  });
+  assert.equal(connector.category, "connector_event");
+});
+
+test("context pack builders create task, decision, and connector packs", async () => {
+  const manager = createContextManager();
+  await manager.add({
+    userId: "pack-user",
+    memory: "Offer won on LinkedIn with a $299 starter package.",
+    category: "growth_outcome",
+    confidence: 0.9,
+    source: "outcome_tracker",
+    subjectType: "offer",
+    subjectId: "offer-1"
+  });
+  await manager.add({
+    userId: "pack-user",
+    memory: "Compliance review rejected exaggerated income claims.",
+    category: "compliance_memory",
+    confidence: 0.8,
+    source: "review"
+  });
+  await manager.add({
+    userId: "pack-user",
+    memory: "Shopify draft was created for the service package.",
+    category: "connector_event",
+    source: "shopify",
+    subjectType: "offer",
+    subjectId: "offer-1"
+  });
+  await manager.add({
+    userId: "pack-user",
+    memory: "Strategy was rejected after attracting unqualified leads.",
+    category: "strategy_signal",
+    source: "strategy_card",
+    subjectType: "offer",
+    subjectId: "offer-1"
+  });
+
+  const taskPack = await buildTaskContextPack({
+    manager,
+    userId: "pack-user",
+    objective: "Create next best offer",
+    subjectType: "offer",
+    subjectId: "offer-1",
+    query: "offer LinkedIn Shopify compliance"
+  });
+  assert.equal(taskPack.type, "task_context_pack");
+  assert.equal(taskPack.subject.id, "offer-1");
+  assert.equal(taskPack.risks.length, 1);
+  assert.equal(taskPack.signals.length >= 1, true);
+
+  const decisionPack = await buildDecisionContextPack({
+    manager,
+    userId: "pack-user",
+    decision: "Publish a Shopify draft",
+    query: "offer LinkedIn rejected Shopify"
+  });
+  assert.equal(decisionPack.type, "decision_context_pack");
+  assert.equal(decisionPack.negativeSignals.length >= 1, true);
+  assert.equal(decisionPack.explainabilityInputs.riskCount, 1);
+
+  const connectorPack = await buildConnectorContextPack({
+    manager,
+    userId: "pack-user",
+    connector: "shopify",
+    query: "Shopify draft"
+  });
+  assert.equal(connectorPack.type, "connector_context_pack");
+  assert.equal(connectorPack.executionGuardrails.draftFirst, true);
+  assert.equal(connectorPack.priorConnectorEvents.length, 1);
+});
+
+test("domain plugins register commerce growth behavior and build prompts", () => {
+  const manager = createContextManager({ domainPlugins: [commerceGrowthPlugin()] });
+  const status = manager.status();
+  assert.equal(status.domainPlugins.importanceScorerCount, 1);
+  assert.ok(status.domainPlugins.contextTypes.some((type) => type.id === "offer_memory"));
+
+  const score = manager.scoreImportance({ eventType: "order.paid", outcome: "win" });
+  assert.equal(score > 0.8, true);
+
+  const prompt = manager.buildPluginPrompt("commerce_growth_decision", {
+    objective: "Choose best first revenue channel",
+    pack: {
+      subject: { type: "offer", id: "offer-1" },
+      positiveSignals: [{ text: "LinkedIn produced qualified calls." }],
+      negativeSignals: [{ text: "TikTok produced unqualified leads." }]
+    }
+  });
+  assert.match(prompt, /draft-first decision/);
+  assert.match(prompt, /LinkedIn produced/);
+});
+
+test("LLM provider contract safely wraps extract, summarize, and embed hooks", async () => {
+  const contract = createLlmContextProviderContract({
+    id: "test-llm",
+    extractMemory: async () => ({ ok: true, memory: "Remember accepted offer.", category: "offer_memory" }),
+    summarizeContext: () => ({ ok: true, summary: "User has a proven LinkedIn starter offer." }),
+    embedText: () => ({ ok: true, embedding: [0.1, 0.2, 0.3] })
+  });
+
+  assert.equal(contract.status().provider, "test-llm");
+  assert.equal((await contract.extractMemory({ text: "accepted" })).category, "offer_memory");
+  assert.match((await contract.summarizeContext({})).summary, /LinkedIn/);
+  assert.deepEqual((await contract.embedText({ text: "offer" })).embedding, [0.1, 0.2, 0.3]);
+
+  const empty = createLlmContextProviderContract();
+  assert.equal((await empty.extractMemory()).ok, false);
 });
 
 test("blocks Mem0 Cloud endpoints and allows localhost self-hosted endpoints", () => {

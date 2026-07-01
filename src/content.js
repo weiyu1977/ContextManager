@@ -114,7 +114,22 @@ const CONTEXT_TYPE_ALIASES = Object.freeze({
   conversation: "chat",
   policy: "policy_analysis",
   provider: "provider_search",
-  recommendation: "recommendation_input"
+  recommendation: "recommendation_input",
+  connector: "connector_event",
+  integration_event: "connector_event",
+  strategy: "strategy_signal",
+  outcome: "growth_outcome",
+  growth: "growth_outcome",
+  offer: "offer_memory",
+  channel: "channel_memory",
+  pricing: "pricing_memory",
+  price: "pricing_memory",
+  delivery: "delivery_memory",
+  customer: "customer_memory",
+  compliance: "compliance_memory",
+  workflow: "workflow_run",
+  account: "external_account",
+  performance: "asset_performance"
 });
 
 function normalizeMemoryCategory(value) {
@@ -125,15 +140,28 @@ function normalizeMemoryCategory(value) {
 function normalizeMemoryInput(input = {}) {
   const content = normalizeContentItems(input);
   const text = input.memory || input.text || contentToSearchText(content);
+  const metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
+  const tags = normalizeStringList(input.tags || metadata.tags || []);
   return {
     id: input.id || "",
+    workspaceId: String(input.workspaceId || input.workspace_id || metadata.workspaceId || "").trim(),
+    tenantId: String(input.tenantId || input.tenant_id || metadata.tenantId || "").trim(),
     userId: String(input.userId || input.user_id || "").trim(),
     agentId: String(input.agentId || input.agent_id || "").trim(),
     runId: String(input.runId || input.run_id || input.sessionId || "").trim(),
+    source: String(input.source || metadata.source || "").trim(),
+    subjectType: String(input.subjectType || input.subject_type || metadata.subjectType || "").trim(),
+    subjectId: String(input.subjectId || input.subject_id || metadata.subjectId || "").trim(),
+    importance: normalizeImportance(input.importance ?? metadata.importance),
+    retention: normalizeRetention(input.retention || metadata.retention),
+    expiresAt: normalizeDateString(input.expiresAt || input.expires_at || metadata.expiresAt),
+    lastUsedAt: normalizeDateString(input.lastUsedAt || input.last_used_at || metadata.lastUsedAt),
+    tags,
+    dedupeKey: String(input.dedupeKey || input.dedupe_key || metadata.dedupeKey || "").trim(),
     memory: String(text || "").trim().slice(0, 20000),
     content,
     categories: normalizeStringList(input.categories || input.category || "chat").map(normalizeMemoryCategory),
-    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
+    metadata: { ...metadata, tags },
     confidence: input.confidence === undefined ? null : Number(input.confidence)
   };
 }
@@ -143,11 +171,31 @@ function normalizeStringList(value) {
   return raw.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20);
 }
 
+function normalizeImportance(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(1, number));
+}
+
+function normalizeRetention(value) {
+  const normalized = String(value || "default").trim().toLowerCase();
+  return ["ephemeral", "short_term", "default", "long_term", "permanent"].includes(normalized) ? normalized : "default";
+}
+
+function normalizeDateString(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 module.exports = {
   supportedContentTypes,
   normalizeContentItems,
   normalizeMemoryInput,
   normalizeMemoryCategory,
   contentToSearchText,
-  normalizeStringList
+  normalizeStringList,
+  normalizeImportance,
+  normalizeRetention
 };

@@ -2,6 +2,7 @@ const { InMemoryStorage } = require("./storage/memory-storage");
 const { LocalContextManagerProvider } = require("./providers/local-context-manager");
 const { Mem0OssProvider } = require("./providers/mem0-oss");
 const { understandRawContext, buildUserProfilePrompt, buildContextSummaryPrompt } = require("./understanding");
+const { createDomainPluginRegistry } = require("./plugins");
 
 function createContextManager(options = {}) {
   return new ContextManager(options);
@@ -15,7 +16,8 @@ class ContextManager {
     mem0 = {},
     localFirst = true,
     externalSync = false,
-    maxMemories = 8
+    maxMemories = 8,
+    domainPlugins = []
   } = {}) {
     this.storage = storage;
     this.localProvider = providers.local_context_manager || new LocalContextManagerProvider({ storage });
@@ -28,6 +30,7 @@ class ContextManager {
     this.localFirst = localFirst;
     this.externalSync = externalSync;
     this.maxMemories = maxMemories;
+    this.domainPlugins = createDomainPluginRegistry(domainPlugins);
   }
 
   status() {
@@ -39,6 +42,7 @@ class ContextManager {
       externalSync: this.externalSync,
       externalCloud: false,
       maxMemories: this.maxMemories,
+      domainPlugins: this.domainPlugins.status(),
       providers: Object.fromEntries(Object.entries(this.providers).map(([key, provider]) => [key, provider.status?.() || { provider: key }]))
     };
   }
@@ -147,6 +151,26 @@ class ContextManager {
     const provider = this.providers[providerName] || this.localProvider;
     if (!provider.test) return { ok: false, provider: providerName, message: "Provider has no test method" };
     return provider.test(input);
+  }
+
+  registerContextType(type) {
+    return this.domainPlugins.registerContextType(type);
+  }
+
+  registerImportanceScorer(score) {
+    return this.domainPlugins.registerImportanceScorer(score);
+  }
+
+  registerPromptBuilder(builder) {
+    return this.domainPlugins.registerPromptBuilder(builder);
+  }
+
+  scoreImportance(event) {
+    return this.domainPlugins.scoreImportance(event);
+  }
+
+  buildPluginPrompt(id, input = {}) {
+    return this.domainPlugins.buildPrompt(id, input);
   }
 
   shouldSyncExternal() {

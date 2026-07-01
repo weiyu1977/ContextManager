@@ -26,10 +26,18 @@ class LocalContextManagerProvider {
     const now = this.clock().toISOString();
     const item = {
       id: normalized.id || `mem-${crypto.randomUUID()}`,
+      workspaceId: normalized.workspaceId,
+      tenantId: normalized.tenantId,
       userId: normalized.userId,
       agentId: normalized.agentId,
       runId: normalized.runId,
       provider: this.id,
+      source: normalized.source,
+      subjectType: normalized.subjectType,
+      subjectId: normalized.subjectId,
+      importance: normalized.importance,
+      retention: normalized.retention,
+      expiresAt: normalized.expiresAt,
       memory: normalized.memory,
       text: normalized.memory,
       content: normalized.content,
@@ -37,10 +45,12 @@ class LocalContextManagerProvider {
       category: normalized.categories[0] || "chat",
       metadata: normalized.metadata,
       confidence: normalized.confidence,
+      tags: normalized.tags,
+      dedupeKey: normalized.dedupeKey,
       status: "active",
       createdAt: now,
       updatedAt: now,
-      lastUsedAt: ""
+      lastUsedAt: normalized.lastUsedAt
     };
     const saved = await this.storage.add(item);
     await this.storage.logEvent?.({ userId: item.userId, eventType: "memory.add", provider: this.id, status: "ok", metadata: { id: item.id } });
@@ -57,7 +67,11 @@ class LocalContextManagerProvider {
           item.memory,
           contentToSearchText(item.content || []),
           JSON.stringify(item.metadata || {}),
-          (item.categories || []).join(" ")
+          (item.categories || []).join(" "),
+          (item.tags || []).join(" "),
+          item.source,
+          item.subjectType,
+          item.subjectId
         ].join(" ").toLowerCase();
         const score = terms.length ? terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0) : 1;
         return { ...item, score };
@@ -94,6 +108,9 @@ class LocalContextManagerProvider {
       }
     }
     if (normalized.content.length || Object.prototype.hasOwnProperty.call(input, "content")) patch.content = normalized.content;
+    for (const field of ["workspaceId", "tenantId", "source", "subjectType", "subjectId", "importance", "retention", "expiresAt", "lastUsedAt", "tags", "dedupeKey"]) {
+      if (Object.prototype.hasOwnProperty.call(input, field)) patch[field] = normalized[field];
+    }
     if (normalized.categories.length || Object.prototype.hasOwnProperty.call(input, "category") || Object.prototype.hasOwnProperty.call(input, "categories")) {
       patch.categories = normalized.categories;
       patch.category = normalized.categories[0] || "chat";
@@ -128,6 +145,15 @@ function matchFilters(item, filters = {}) {
   if (filters.category && !(item.categories || []).includes(filters.category) && item.category !== filters.category) return false;
   if (filters.agentId && item.agentId !== filters.agentId) return false;
   if (filters.runId && item.runId !== filters.runId) return false;
+  if (filters.workspaceId && item.workspaceId !== filters.workspaceId) return false;
+  if (filters.tenantId && item.tenantId !== filters.tenantId) return false;
+  if (filters.source && item.source !== filters.source) return false;
+  if (filters.subjectType && item.subjectType !== filters.subjectType) return false;
+  if (filters.subjectId && item.subjectId !== filters.subjectId) return false;
+  if (Array.isArray(filters.tags) && filters.tags.length) {
+    const tags = new Set(item.tags || []);
+    if (!filters.tags.some((tag) => tags.has(tag))) return false;
+  }
   if (Array.isArray(filters.contentTypes) && filters.contentTypes.length) {
     const types = new Set((item.content || []).map((content) => content.type));
     if (!filters.contentTypes.some((type) => types.has(type))) return false;

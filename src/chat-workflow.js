@@ -25,7 +25,19 @@ const CONTEXT_TYPES = Object.freeze([
   "audio_transcript",
   "video_summary",
   "document_upload",
-  "manual_note"
+  "manual_note",
+  "connector_event",
+  "strategy_signal",
+  "growth_outcome",
+  "offer_memory",
+  "channel_memory",
+  "pricing_memory",
+  "delivery_memory",
+  "customer_memory",
+  "compliance_memory",
+  "workflow_run",
+  "external_account",
+  "asset_performance"
 ]);
 
 const LEGACY_CONTEXT_TYPE_MAP = Object.freeze({
@@ -38,7 +50,22 @@ const LEGACY_CONTEXT_TYPE_MAP = Object.freeze({
   recommendation: "recommendation_input",
   audio: "audio_transcript",
   video: "video_summary",
-  note: "manual_note"
+  note: "manual_note",
+  connector: "connector_event",
+  integration_event: "connector_event",
+  strategy: "strategy_signal",
+  outcome: "growth_outcome",
+  growth: "growth_outcome",
+  offer: "offer_memory",
+  channel: "channel_memory",
+  pricing: "pricing_memory",
+  price: "pricing_memory",
+  delivery: "delivery_memory",
+  customer: "customer_memory",
+  compliance: "compliance_memory",
+  workflow: "workflow_run",
+  account: "external_account",
+  performance: "asset_performance"
 });
 
 function normalizeContextType(value, fallback = "chat") {
